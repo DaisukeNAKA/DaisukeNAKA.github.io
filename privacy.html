@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="『ユニコ短尺動画運用ツール』のプライバシーポリシーです。">
+  <title>プライバシーポリシー | ユニコ短尺動画運用ツール</title>
+  <style>
+    :root { color-scheme:light; --ink:#18202b; --muted:#5f6875; --line:#dfe4ea; --soft:#f6f8fb; --blue:#165dba; --warn:#fff7df; }
+    * { box-sizing:border-box; }
+    body { margin:0; color:var(--ink); background:#fff; font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Noto Sans JP",sans-serif; line-height:1.75; }
+    header, main, footer { width:min(920px,calc(100% - 32px)); margin:auto; }
+    header { padding:26px 0 18px; border-bottom:1px solid var(--line); }
+    h1 { margin:0 0 10px; font-size:clamp(1.55rem,5vw,2.35rem); line-height:1.25; }
+    h2 { margin-top:2.2rem; line-height:1.35; }
+    nav { display:flex; flex-wrap:wrap; gap:8px 18px; }
+    a { color:var(--blue); text-underline-offset:3px; }
+    main { padding:28px 0 48px; }
+    .notice { padding:16px 18px; border:1px solid #ead17c; border-radius:12px; background:var(--warn); }
+    table { width:100%; border-collapse:collapse; font-size:.95rem; }
+    th, td { padding:11px; border:1px solid var(--line); text-align:left; vertical-align:top; }
+    th { background:var(--soft); }
+    code { overflow-wrap:anywhere; }
+    .en { margin-top:38px; padding-top:22px; border-top:2px solid var(--line); }
+    footer { padding:22px 0 36px; border-top:1px solid var(--line); color:var(--muted); font-size:.92rem; }
+    @media (max-width:650px) { table, tbody, tr, th, td { display:block; } thead { display:none; } tr { margin:0 0 14px; border:1px solid var(--line); } th, td { border:0; border-bottom:1px solid var(--line); } }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>プライバシーポリシー</h1>
+    <nav aria-label="主要ページ">
+      <a href="index.html">アプリ概要</a>
+      <a href="privacy.html" aria-current="page">プライバシーポリシー</a>
+      <a href="terms.html">利用規約</a>
+    </nav>
+  </header>
+
+  <main>
+    <p>本ポリシーは、内部運用ツール「ユニコ短尺動画運用ツール」（以下「本アプリ」）におけるGoogle／YouTube関連データの取扱いを説明します。本アプリの対象はユニコ公式YouTubeチャンネル<code>UCuwkUkClDI-EX_RO5p-O29A</code>（<code>@yy_unico</code>）だけです。利用者は、Google OAuth認可を開始しまたは本アプリのYouTube API機能を使用する前に、本ポリシーと<a href="terms.html">利用規約</a>を確認し、同意したうえで利用します。</p>
+
+    <aside class="notice">
+      <strong>現行状態：</strong>本アプリは内部テスト中です。private upload、macOS Keychain保存、アプリ内の一括revoke／削除機能は実装・検証済みですが、Compliance AuditとOAuth verificationは未完了です。これらを完了するまで公開自動化は有効化しません。
+    </aside>
+
+    <section aria-labelledby="controller">
+      <h2 id="controller">1. 運営者と連絡先</h2>
+      <p>本アプリはユニコ公式チャンネルの内部運営担当者が管理します。プライバシー、認可失効、データ削除に関する連絡先は<a href="mailto:daisuke.n0520@gmail.com">daisuke.n0520@gmail.com</a>です。</p>
+    </section>
+
+    <section aria-labelledby="data">
+      <h2 id="data">2. 取得・保存するデータ</h2>
+      <table>
+        <thead><tr><th>データ</th><th>用途</th><th>現行の取扱い</th></tr></thead>
+        <tbody>
+          <tr><td>OAuth認可code、access token、state</td><td>認可と短時間のAPI通信</td><td>プロセスメモリだけで使用し、永続保存しません。</td></tr>
+          <tr><td>OAuth refresh token</td><td>許可された運営処理の継続</td><td>macOS Keychainへ保存します。コード、ログ、配布物外envへ平文保存しません。</td></tr>
+          <tr><td>認証チャンネルID、title、handle</td><td><code>channels.list(mine=true)</code>による投稿先照合</td><td>API応答は照合に使用し、応答全体を永続保存しません。固定の対象ID／handleは設定として保持します。</td></tr>
+          <tr><td>動画ID、title、description、予定日時、状態、エラー</td><td>アップロード、重複防止、運用確認</td><td>ローカルSQLite台帳に必要な期間だけ保存します。</td></tr>
+          <tr><td>resumable upload session URL</td><td>結果不明時の照会</td><td>結果不明時だけ内部台帳に保持し、成功・照会確定後または接続解除時に削除します。</td></tr>
+          <tr><td>公開view／like／comment countと取得日時</td><td>公開Shortsの基本実績確認</td><td>API keyで最大50動画を一括取得し、30日を超えた行を自動削除します。</td></tr>
+        </tbody>
+      </table>
+      <p>視聴者の氏名、メールアドレス、プロフィール、コメント本文、視聴履歴、検索履歴、位置情報、YouTubeパスワード、ブラウザCookieは取得しません。</p>
+    </section>
+
+    <section aria-labelledby="scopes">
+      <h2 id="scopes">3. OAuth scopesと利用目的</h2>
+      <ul>
+        <li><code>youtube.upload</code>：運営担当者が確認した動画、title、description、privacy設定を対象チャンネルへ送信するため。</li>
+        <li><code>youtube.readonly</code>：書込み直前に認証チャンネルを読み、固定チャンネル以外への誤投稿を停止するため。</li>
+      </ul>
+      <p>本アプリはコメント、高評価、登録者、YouTube Analyticsの操作・取得に必要な追加scopeを要求しません。</p>
+    </section>
+
+    <section aria-labelledby="sharing">
+      <h2 id="sharing">4. 第三者共有</h2>
+      <p>YouTube API Dataを販売、広告利用、プロファイリング、無関係な第三者への提供には使用しません。機能提供に必要なOAuthおよびYouTube Data API通信としてGoogle／YouTubeへ送信する場合を除き、YouTube laneから第三者へ共有しません。</p>
+      <p>Googleによるデータの取扱いについては、<a href="https://policies.google.com/privacy" rel="noopener noreferrer">Googleプライバシーポリシー</a>をご確認ください。</p>
+    </section>
+
+    <section aria-labelledby="retention">
+      <h2 id="retention">5. 保存期間</h2>
+      <ul>
+        <li>access token、認可code、stateは処理終了またはtimeout時に破棄します。</li>
+        <li>refresh tokenと認可済みAPI Dataは、内部運用に必要で認可が有効な期間だけ保持します。</li>
+        <li>公開統計はNon-Authorized API Dataとして30日を超えて保持せず、収集時に期限超過行を削除します。</li>
+        <li>削除依頼または認可失効を確認した場合、対象のローカルデータを可能な限り速やかに、遅くとも7暦日以内に削除します。</li>
+      </ul>
+    </section>
+
+    <section id="revocation" aria-labelledby="revocation-title">
+      <h2 id="revocation-title">6. 認可の失効とローカルデータ削除</h2>
+      <ol>
+        <li><a href="https://security.google.com/settings/security/permissions" rel="noopener noreferrer">Google Security Settings</a>から本アプリのアクセス権を取り消せます。</li>
+        <li>ローカルに保存されたtokenとYouTube API Dataの削除は、<a href="mailto:daisuke.n0520@gmail.com">daisuke.n0520@gmail.com</a>へ依頼してください。メールにパスワードやtokenを記載しないでください。</li>
+        <li>運営者は新規API処理を停止し、対象のrefresh tokenと関連ローカルデータを可能な限り速やかに、遅くとも7暦日以内に削除します。</li>
+      </ol>
+      <p>運営者はアプリの一括解除操作で、自動化停止、Google token revoke、Keychain token削除、関連ローカルAPI Data削除を開始できます。</p>
+    </section>
+
+    <section aria-labelledby="youtube-content">
+      <h2 id="youtube-content">7. YouTube上の動画との区別</h2>
+      <p>本アプリのローカルデータを削除しても、YouTube上の動画やYouTubeが保有するデータは削除されません。YouTube上の動画を削除する場合は、チャンネル所有者がYouTube Studio等のYouTube公式機能で別途管理します。</p>
+    </section>
+
+    <section aria-labelledby="changes">
+      <h2 id="changes">8. 改定</h2>
+      <p>取扱データ、scope、利用目的が変わる場合は、本ポリシーとOAuth同意内容を更新し、必要な審査・再認可を行います。</p>
+    </section>
+
+    <section class="en" lang="en" aria-labelledby="english-summary">
+      <h2 id="english-summary">English privacy summary</h2>
+      <p>Before starting Google OAuth authorization or using this application's YouTube API features, an operator must review and agree to this policy and the <a href="terms.html">Terms of Use</a>. This internal application uses <code>youtube.upload</code> for operator-approved uploads and <code>youtube.readonly</code> only to verify the authenticated channel. It stores operational upload records locally and does not collect viewer identities, profiles, viewing history, or comment text.</p>
+      <p>Authorization codes, access tokens, and OAuth state are held only in process memory and discarded when the operation ends or times out. The refresh token is stored in macOS Keychain. An unresolved resumable upload session URL is retained locally only while it is needed to determine the upload outcome and is deleted after the outcome is confirmed or when access is disconnected. Public view, like, and comment counts are retrieved by API key, and records older than 30 days are deleted during collection.</p>
+      <p>YouTube API Data is not sold, used for advertising, or shared with unrelated third parties. Data sent to Google and YouTube is also governed by the <a href="https://policies.google.com/privacy" rel="noopener noreferrer">Google Privacy Policy</a>. Access can be revoked through <a href="https://security.google.com/settings/security/permissions" rel="noopener noreferrer">Google Security Settings</a>. Local deletion requests can be sent to <a href="mailto:daisuke.n0520@gmail.com">daisuke.n0520@gmail.com</a>. New API processing is stopped and the local refresh token and related local YouTube API Data are deleted as soon as practicable and no later than seven calendar days after a deletion request or confirmed authorization revocation.</p>
+      <p>Deleting local application data does not delete videos or data held by YouTube. YouTube-hosted videos must be managed separately through YouTube's official tools.</p>
+    </section>
+  </main>
+
+  <footer>
+    <p>発効日 / Effective date: 2026-08-01</p>
+    <p><a href="index.html">アプリ概要</a> · <a href="terms.html">利用規約</a></p>
+  </footer>
+</body>
+</html>
