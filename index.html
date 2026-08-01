@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="ユニコ公式チャンネル向け内部運用ツール『ユニコ短尺動画運用ツール』の概要です。">
+  <title>ユニコ短尺動画運用ツール</title>
+  <style>
+    :root { color-scheme: light; --ink:#18202b; --muted:#5f6875; --line:#dfe4ea; --brand:#ff315b; --soft:#fff2f5; --blue:#165dba; }
+    * { box-sizing: border-box; }
+    body { margin:0; color:var(--ink); background:#fff; font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Noto Sans JP",sans-serif; line-height:1.75; }
+    header, main, footer { width:min(920px,calc(100% - 32px)); margin:auto; }
+    header { padding:26px 0 18px; border-bottom:1px solid var(--line); }
+    h1 { margin:0 0 10px; font-size:clamp(1.6rem,5vw,2.5rem); line-height:1.25; }
+    h2 { margin-top:2.2rem; line-height:1.35; }
+    h3 { line-height:1.4; }
+    nav { display:flex; flex-wrap:wrap; gap:8px 18px; }
+    a { color:var(--blue); text-underline-offset:3px; }
+    main { padding:28px 0 48px; }
+    .status { padding:18px 20px; border:1px solid #ffc0ce; border-radius:14px; background:var(--soft); }
+    .status strong { color:#a90029; }
+    .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(240px,1fr)); gap:14px; }
+    .card { padding:18px; border:1px solid var(--line); border-radius:14px; }
+    .card h3 { margin-top:0; }
+    dt { font-weight:700; }
+    dd { margin:0 0 12px; }
+    code { overflow-wrap:anywhere; }
+    .en { margin-top:38px; padding-top:22px; border-top:2px solid var(--line); }
+    footer { padding:22px 0 36px; border-top:1px solid var(--line); color:var(--muted); font-size:.92rem; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>ユニコ短尺動画運用ツール</h1>
+    <nav aria-label="主要ページ">
+      <a href="index.html" aria-current="page">アプリ概要</a>
+      <a href="privacy.html">プライバシーポリシー</a>
+      <a href="terms.html">利用規約</a>
+    </nav>
+  </header>
+
+  <main>
+    <section class="status" aria-labelledby="current-status">
+      <h2 id="current-status">現在の状態：内部テスト中／公開自動化停止</h2>
+      <p><strong>YouTube Data APIによるprivate動画の実機テストは完了しています。</strong>一方、YouTube API Compliance AuditとOAuth verificationは未完了です。このため、公開予約と公開自動化は有効化していません。</p>
+    </section>
+
+    <section aria-labelledby="about">
+      <h2 id="about">アプリについて</h2>
+      <p>本アプリは、お笑いコンビ「ユニコ」が所有する単一の公式YouTubeチャンネルへ、権利確認済みのローカル動画から制作したShortsをアップロードし、運用するための内部ツールです。一般利用者の登録、第三者チャンネルへの投稿、コメント・高評価・チャンネル登録の自動操作は行いません。</p>
+      <dl>
+        <dt>対象チャンネル</dt>
+        <dd><a href="https://www.youtube.com/channel/UCuwkUkClDI-EX_RO5p-O29A" rel="noopener noreferrer">@yy_unico / UCuwkUkClDI-EX_RO5p-O29A</a></dd>
+        <dt>利用者</dt>
+        <dd>チャンネル所有者と、所有者が明示的に許可した運営担当者のみ</dd>
+        <dt>運営目的</dt>
+        <dd>完成済みShortsの安全なアップロード、メタデータ確認、重複防止、将来の予約公開</dd>
+      </dl>
+    </section>
+
+    <section aria-labelledby="permissions">
+      <h2 id="permissions">Google OAuth権限</h2>
+      <p>Google OAuth認可を開始またはYouTube API機能を使用する前に、運営担当者は<a href="privacy.html">プライバシーポリシー</a>と<a href="terms.html">利用規約</a>を確認し、同意します。</p>
+      <div class="grid">
+        <article class="card">
+          <h3><code>youtube.upload</code></h3>
+          <p>運営担当者が選択したShortsを対象チャンネルへアップロードし、承認されたタイトル、説明、公開設定を送るために使用します。監査完了前はprivateテストに限定します。</p>
+        </article>
+        <article class="card">
+          <h3><code>youtube.readonly</code></h3>
+          <p>アップロード直前に<code>channels.list(mine=true)</code>を実行し、認証中のチャンネルIDとhandleが固定の投稿先と一致するか確認するためだけに使用します。</p>
+        </article>
+      </div>
+      <p>より広い<code>youtube</code>、<code>youtube.force-ssl</code>、YouTube Analytics等の権限は要求しません。</p>
+    </section>
+
+    <section aria-labelledby="data-summary">
+      <h2 id="data-summary">データ利用の概要</h2>
+      <ul>
+        <li>動画ID、タイトル、説明、予約日時、投稿状態、エラー状態を内部台帳で扱います。</li>
+        <li>公開済み動画のview／like／comment countをAPI keyで取得する場合、コメント本文や視聴者情報は取得せず、30日を超えた公開統計を自動削除します。</li>
+        <li>YouTube API Dataの販売、広告利用、無関係な第三者への共有は行いません。</li>
+        <li>認可の失効とローカルデータ削除の現行手順は<a href="privacy.html#revocation">プライバシーポリシー</a>に記載しています。</li>
+      </ul>
+      <p>Googleによるデータの取扱いは<a href="https://policies.google.com/privacy" rel="noopener noreferrer">Googleプライバシーポリシー</a>もご確認ください。</p>
+    </section>
+
+    <section aria-labelledby="contact">
+      <h2 id="contact">問い合わせ</h2>
+      <p>プライバシー、認可失効、データ削除に関する連絡先：<a href="mailto:daisuke.n0520@gmail.com">daisuke.n0520@gmail.com</a></p>
+    </section>
+
+    <section class="en" lang="en" aria-labelledby="english-summary">
+      <h2 id="english-summary">English summary</h2>
+      <p><strong>Unico Short-form Video Operations Tool</strong> is an internal tool for one creator-owned YouTube channel, <code>UCuwkUkClDI-EX_RO5p-O29A</code> (<code>@yy_unico</code>). It uses <code>youtube.upload</code> for operator-selected uploads and <code>youtube.readonly</code> only to verify the authenticated channel before writing.</p>
+      <p>The application is currently in internal testing. Private API upload testing is complete, but public scheduling and unattended publication remain disabled until the YouTube API Compliance Audit and OAuth verification are complete. There is no public sign-up, third-party channel access, viewer profiling, comment-text collection, or sale of API Data.</p>
+      <p>Before starting Google OAuth or using YouTube API features, an operator must review and agree to the <a href="privacy.html">Privacy Policy</a> and <a href="terms.html">Terms of Use</a>. Google's handling of data is described in the <a href="https://policies.google.com/privacy" rel="noopener noreferrer">Google Privacy Policy</a>.</p>
+    </section>
+  </main>
+
+  <footer>
+    <p>発効日 / Effective date: 2026-08-01</p>
+    <p><a href="privacy.html">プライバシーポリシー</a> · <a href="terms.html">利用規約</a></p>
+  </footer>
+</body>
+</html>
