@@ -98,7 +98,7 @@
         <li>ローカルに保存されたtokenとYouTube API Dataの削除は、<a href="mailto:daisuke.n0520@gmail.com">daisuke.n0520@gmail.com</a>へ依頼してください。メールにパスワードやtokenを記載しないでください。</li>
         <li>運営者は新規API処理を停止し、対象のrefresh tokenと関連ローカルデータを可能な限り速やかに、遅くとも7暦日以内に削除します。</li>
       </ol>
-      <p>運営者はアプリの一括解除操作で、自動化停止、Google token revoke、Keychain token削除、関連ローカルAPI Data削除を開始できます。</p>
+      <p>運営者はアプリの一括解除操作で、自動化停止、Google token revoke、Keychain token削除、現行台帳とアプリ管理下のバックアップSQLite／WALを含む関連ローカルAPI Data削除を開始できます。削除後は各台帳を再検査し、残存データを検出した場合は完了扱いにしません。</p>
     </section>
 
     <section aria-labelledby="youtube-content">
@@ -114,7 +114,7 @@
     <section class="en" lang="en" aria-labelledby="english-summary">
       <h2 id="english-summary">English privacy summary</h2>
       <p>Before starting Google OAuth authorization or using this application's YouTube API features, an operator must review and agree to this policy and the <a href="terms.html">Terms of Use</a>. This internal application uses <code>youtube.upload</code> for operator-approved uploads and <code>youtube.readonly</code> only to verify the authenticated channel. It stores operational upload records locally and does not collect viewer identities, profiles, viewing history, or comment text.</p>
-      <p>Authorization codes, access tokens, and OAuth state are held only in process memory and discarded when the operation ends or times out. The refresh token is stored in macOS Keychain. An unresolved resumable upload session URL is retained locally only while it is needed to determine the upload outcome and is deleted after the outcome is confirmed or when access is disconnected. Public view, like, and comment counts are retrieved by API key, and records older than 30 days are deleted during collection.</p>
+      <p>Authorization codes, access tokens, and OAuth state are held only in process memory and discarded when the operation ends or times out. The refresh token is stored in macOS Keychain. An unresolved resumable upload session URL is retained locally only while it is needed to determine the upload outcome and is deleted after the outcome is confirmed or when access is disconnected. Disconnect also scrubs app-controlled backup SQLite databases and related WAL files, then verifies that no video ID, resumable session URL, private-test proof, or API metric remains. Public view, like, and comment counts are retrieved by API key, and records older than 30 days are deleted during collection.</p>
       <p>YouTube API Data is not sold, used for advertising, or shared with unrelated third parties. Data sent to Google and YouTube is also governed by the <a href="https://policies.google.com/privacy" rel="noopener noreferrer">Google Privacy Policy</a>. Access can be revoked through <a href="https://security.google.com/settings/security/permissions" rel="noopener noreferrer">Google Security Settings</a>. Local deletion requests can be sent to <a href="mailto:daisuke.n0520@gmail.com">daisuke.n0520@gmail.com</a>. New API processing is stopped and the local refresh token and related local YouTube API Data are deleted as soon as practicable and no later than seven calendar days after a deletion request or confirmed authorization revocation.</p>
       <p>Deleting local application data does not delete videos or data held by YouTube. YouTube-hosted videos must be managed separately through YouTube's official tools.</p>
     </section>
