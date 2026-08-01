@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="『ユニコ短尺動画運用ツール』の利用規約です。">
+  <title>利用規約 | ユニコ短尺動画運用ツール</title>
+  <style>
+    :root { color-scheme:light; --ink:#18202b; --muted:#5f6875; --line:#dfe4ea; --blue:#165dba; --soft:#f6f8fb; }
+    * { box-sizing:border-box; }
+    body { margin:0; color:var(--ink); background:#fff; font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Noto Sans JP",sans-serif; line-height:1.75; }
+    header, main, footer { width:min(920px,calc(100% - 32px)); margin:auto; }
+    header { padding:26px 0 18px; border-bottom:1px solid var(--line); }
+    h1 { margin:0 0 10px; font-size:clamp(1.55rem,5vw,2.35rem); line-height:1.25; }
+    h2 { margin-top:2.2rem; line-height:1.35; }
+    nav { display:flex; flex-wrap:wrap; gap:8px 18px; }
+    a { color:var(--blue); text-underline-offset:3px; }
+    main { padding:28px 0 48px; }
+    .lead { padding:18px; border:1px solid var(--line); border-radius:12px; background:var(--soft); }
+    code { overflow-wrap:anywhere; }
+    .en { margin-top:38px; padding-top:22px; border-top:2px solid var(--line); }
+    footer { padding:22px 0 36px; border-top:1px solid var(--line); color:var(--muted); font-size:.92rem; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>利用規約</h1>
+    <nav aria-label="主要ページ">
+      <a href="index.html">アプリ概要</a>
+      <a href="privacy.html">プライバシーポリシー</a>
+      <a href="terms.html" aria-current="page">利用規約</a>
+    </nav>
+  </header>
+
+  <main>
+    <p class="lead">本規約は、内部運用ツール「ユニコ短尺動画運用ツール」（以下「本アプリ」）の利用条件を定めます。本アプリはユニコ公式YouTubeチャンネル<code>UCuwkUkClDI-EX_RO5p-O29A</code>（<code>@yy_unico</code>）専用であり、一般向けサービスではありません。本アプリを利用することにより、利用者は本規約と適用される<a href="https://www.youtube.com/static?template=terms" rel="noopener noreferrer">YouTube利用規約</a>に同意したものとします。</p>
+
+    <section aria-labelledby="users">
+      <h2 id="users">1. 利用資格</h2>
+      <p>本アプリを利用できるのは、対象チャンネルの所有者および所有者が明示的に許可した運営担当者だけです。公開登録、第三者への再提供、複数テナント利用、第三者チャンネルへの投稿は認めません。</p>
+    </section>
+
+    <section aria-labelledby="purpose">
+      <h2 id="purpose">2. 提供機能と現在の制限</h2>
+      <p>本アプリは、権利確認済みのローカル動画から作成したShortsについて、投稿先照合、private upload、メタデータ送信、重複防止、状態記録を行います。</p>
+      <p>YouTube API Compliance AuditとOAuth verificationは未完了です。そのため、公開予約と公開自動化は停止しています。private uploadの成功は公開運用の承認または完了を意味しません。</p>
+    </section>
+
+    <section aria-labelledby="operator">
+      <h2 id="operator">3. 運営担当者の責任</h2>
+      <ul>
+        <li>動画、画像、音声、出演者、字幕その他の素材について、アップロードと公開に必要な権利・同意を確認すること。</li>
+        <li>投稿前にtitle、description、privacy設定、対象チャンネル、公開日時を確認すること。</li>
+        <li>子供向け設定、synthetic media申告、著作権、広告・表示義務を内容に応じて正しく判断すること。</li>
+        <li>OAuth credential、token、API key、パスワードを第三者へ開示しないこと。</li>
+      </ul>
+    </section>
+
+    <section aria-labelledby="prohibited">
+      <h2 id="prohibited">4. 禁止事項</h2>
+      <ul>
+        <li>権利のないコンテンツ、違法・有害・誤認を招くコンテンツの投稿</li>
+        <li>視聴回数、高評価、コメント、登録者等の不正な操作</li>
+        <li>OAuth同意を超えるデータ利用、viewer profiling、API Dataの販売</li>
+        <li>quota回避のための複数project分割、認証先照合や安全ゲートの回避</li>
+        <li>YouTube Studioの無人ブラウザ操作、非公開APIや無許可の自動アクセス</li>
+        <li>対象外チャンネルへの投稿または本アプリの第三者向け提供</li>
+      </ul>
+    </section>
+
+    <section aria-labelledby="google">
+      <h2 id="google">5. Google／YouTubeサービス</h2>
+      <p>本アプリはYouTube Data API v3とGoogle OAuthを使用します。本アプリを利用することで、利用者は適用される<a href="https://www.youtube.com/static?template=terms" rel="noopener noreferrer">YouTube利用規約</a>に同意します。GoogleのポリシーおよびYouTube API Servicesの条件も適用されます。Google／YouTube側の停止、仕様変更、quota、審査結果により機能を停止または変更する場合があります。</p>
+    </section>
+
+    <section aria-labelledby="privacy">
+      <h2 id="privacy">6. データとプライバシー</h2>
+      <p>データの種類、OAuth scopes、30日保持、第三者共有、認可失効、ローカル削除については<a href="privacy.html">プライバシーポリシー</a>を適用します。</p>
+    </section>
+
+    <section aria-labelledby="revoke">
+      <h2 id="revoke">7. 認可失効・利用終了</h2>
+      <p>運営担当者は<a href="https://security.google.com/settings/security/permissions" rel="noopener noreferrer">Google Security Settings</a>からアクセス権を取り消せます。ローカルデータ削除は<a href="mailto:daisuke.n0520@gmail.com">daisuke.n0520@gmail.com</a>へ依頼できます。安全上の問題、認可失効、規約違反、審査未完了がある場合、運営者は自動処理を停止します。</p>
+      <p>ローカルデータの削除は、YouTube上の動画を削除しません。YouTube上の動画はチャンネル所有者がYouTube Studio等で別途管理します。</p>
+    </section>
+
+    <section aria-labelledby="availability">
+      <h2 id="availability">8. 可用性と責任範囲</h2>
+      <p>本アプリは内部運用を支援するもので、無停止稼働、公開時刻、再生数、エンゲージメント、審査通過を保証しません。運営担当者は送信結果とYouTube上の表示を確認し、結果不明時に重複投稿しないものとします。法令上免責できない責任は除きます。</p>
+    </section>
+
+    <section aria-labelledby="changes">
+      <h2 id="changes">9. 変更と問い合わせ</h2>
+      <p>機能、適用規則、審査条件の変更に応じて本規約を更新します。重要な変更は運営担当者へ通知し、必要に応じて再同意を取得します。問い合わせ先は<a href="mailto:daisuke.n0520@gmail.com">daisuke.n0520@gmail.com</a>です。</p>
+    </section>
+
+    <section class="en" lang="en" aria-labelledby="english-summary">
+      <h2 id="english-summary">English terms summary</h2>
+      <p>This is an internal tool exclusively for the creator-owned channel <code>UCuwkUkClDI-EX_RO5p-O29A</code> (<code>@yy_unico</code>). Only the channel owner and explicitly authorized operators may use it. There is no public sign-up, multi-tenant service, or third-party channel upload.</p>
+      <p>By using this application, an operator agrees to these Terms of Use and the applicable <a href="https://www.youtube.com/static?template=terms" rel="noopener noreferrer">YouTube Terms of Service</a>.</p>
+      <p>Operators must use only rights-cleared content, verify metadata and privacy settings, protect credentials, and comply with YouTube's Terms and API policies. Unattended YouTube Studio browser automation, artificial engagement, quota circumvention, and unauthorized data use are prohibited.</p>
+      <p>Public scheduling is disabled until the YouTube API Compliance Audit and OAuth verification are complete. Revoking or deleting local application data does not delete videos hosted by YouTube; those videos must be managed separately through YouTube's official tools.</p>
+    </section>
+  </main>
+
+  <footer>
+    <p>発効日 / Effective date: 2026-08-01</p>
+    <p><a href="index.html">アプリ概要</a> · <a href="privacy.html">プライバシーポリシー</a></p>
+  </footer>
+</body>
+</html>
