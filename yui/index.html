@@ -12,22 +12,21 @@
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="「結」の書き方診断">
 <meta property="og:title" content="「結」の書き方診断 ｜ 最後の3行が、読者の明日を決めます">
-<meta property="og:description" content="本文は読まれている。それでも何も起きないのは、たいてい最後の数行のせいです。10問で、あなたの締め方の型と穴が分かります。">
+<meta property="og:description" content="起承転結の「結」＝文章の締め方を10問で診断します。4タイプ判定と、明快さ・接続・余白の3要素スコア、そのまま使える締めのテンプレートをお渡しします。">
 <meta property="og:url" content="https://daisukenaka.github.io/yui/">
 <meta property="og:image" content="https://daisukenaka.github.io/yui/ogp/yui-top-v1.png">
 <meta property="og:image:width" content="2400">
 <meta property="og:image:height" content="1260">
-<meta property="og:image:alt" content="「結」の書き方診断">
 <meta property="og:locale" content="ja_JP">
 <meta name="twitter:card" content="summary_large_image">
-<meta name="twitter:title" content="「結」の書き方診断">
-<meta name="twitter:description" content="本文は読まれている。それでも何も起きないのは、たいてい最後の数行のせいです。">
+<meta name="twitter:title" content="「結」の書き方診断 ｜ 最後の3行が、読者の明日を決めます">
+<meta name="twitter:description" content="起承転結の「結」＝文章の締め方を10問で診断します。4タイプ判定と、明快さ・接続・余白の3要素スコア、そのまま使える締めのテンプレートをお渡しします。">
 <meta name="twitter:image" content="https://daisukenaka.github.io/yui/ogp/yui-top-v1.png">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%23c8453c'/%3E%3Ctext x='32' y='47' font-size='40' text-anchor='middle' fill='%23fff' font-family='serif'%3E%E7%B5%90%3C/text%3E%3C/svg%3E">
 <link rel="stylesheet" href="style.css">
+
 </head>
 <body>
-
 <main>
   <!-- ========== 導入 ========== -->
   <section id="intro" aria-labelledby="intro-title">
@@ -35,32 +34,46 @@
     <div class="seal" aria-hidden="true" style="margin:0 0 26px">結</div>
     <p class="kicker">Writing Diagnosis</p>
     <h1 id="intro-title">「結」の書き方診断</h1>
-    <p class="sub" id="c-subtitle"></p>
-    <p class="hook" id="c-hook"></p>
-
-    <p class="block-title">この診断で分かること</p>
-    <ul class="list" id="c-promise"></ul>
-
-    <hr class="rule">
-
-    <p class="block-title">こんな方へ</p>
-    <ul class="list" id="c-whofor"></ul>
+    <p class="sub" id="c-subtitle">最後の3行が、読者の明日を決めます</p>
+    <p class="hook" id="c-hook">本文は読まれている。それでも何も起きないのは、たいてい最後の数行のせいです。</p>
 
     <div class="start-wrap">
       <button class="btn" id="start" type="button">10問に答える（約3分）</button>
-      <p class="note" style="margin-top:12px;text-align:center" id="c-privacy"></p>
+      <p class="note" id="c-privacy" style="margin-top:12px;text-align:center">登録不要。回答は送信されません。</p>
     </div>
 
-    <div class="author" id="c-author"></div>
+    <hr class="rule">
+
+    <p class="block-title">この診断で分かること</p>
+    <ul class="list" id="c-promise">
+        <li>あなたの締め方が4タイプのどれなのかが分かります</li>
+        <li>結の3要素（明快さ・接続・余白）のどこが薄いかが数値で出ます</li>
+        <li>いちばん低い要素に合わせた、穴埋め式の締めのテンプレートが1本手に入ります</li>
+    </ul>
+
+    <p class="block-title" style="margin-top:30px">こんな方へ</p>
+    <ul class="list" id="c-whofor">
+        <li>投稿は読まれているのに、保存もコメントも申し込みも起きない方</li>
+        <li>本文は書けるのに、最後の3行で毎回手が止まる方</li>
+        <li>提案書やメルマガの締めを、なんとなくの定型文で埋めている方</li>
+    </ul>
+
+    <div class="start-wrap">
+      <button class="btn" id="start2" type="button">10問に答える（約3分）</button>
+      <p class="note" id="c-privacy2" style="margin-top:12px;text-align:center">回答はお使いのブラウザの中だけで計算します。外部のサーバーへ送ることはありません。中断しても続きから再開できるよう、回答はお使いの端末の中にだけ残ります（「もう一度受ける」を押すと消えます）。</p>
+    </div>
+
+    <div class="author" id="c-author">監修：中塚大佑。Web媒体の編集者として、企画から構成、取材、原稿整理までを担当しています。並行して事業開発とコンサルティングに携わるなかで、書き手の文章が仕事につながるかどうかは最後の数行で決まる場面が多いと感じてきました。その視点で設計した診断です。</div>
   </section>
 
-  <!-- ========== 属性設問（スコア非算入） ========== -->
+  <!-- ========== 属性設問（スコアには算入しません） ========== -->
   <section id="gate" hidden aria-labelledby="g-text">
+    <button class="qback" id="g-back" type="button">← 前に戻る</button>
     <p class="kicker">はじめに</p>
     <p class="scene" id="g-scene"></p>
     <h2 class="qtext" id="g-text" tabindex="-1"></h2>
     <div class="opts" id="g-opts" role="group" aria-labelledby="g-text"></div>
-    <p class="note" style="margin-top:18px">この回答はタイプ判定にも結スコアにも影響しません。お返しする内容を合わせるためだけに伺っています。</p>
+    <p class="note" style="margin-top:18px">この回答はタイプ判定にも結スコアにも影響しません。お返しする内容を合わせるためだけに伺っています。このあと10問です。</p>
   </section>
 
   <!-- ========== 設問 ========== -->
@@ -70,7 +83,7 @@
         <button class="qback" id="q-back" type="button">← ひとつ戻る</button>
         <span class="qcount"><b id="q-now">1</b> <span aria-hidden="true">/</span> <span id="q-total">10</span></span>
       </div>
-      <div class="segs" id="q-segs" role="progressbar" aria-valuemin="0" aria-valuemax="10" aria-valuenow="0" aria-label="回答の進捗"></div>
+      <div class="segs" id="q-segs" role="progressbar" aria-valuemin="0" aria-valuemax="10" aria-valuenow="1" aria-label="回答の進捗"></div>
     </div>
     <div class="stage" id="q-stage">
       <p class="scene" id="q-scene"></p>
@@ -83,9 +96,9 @@
   <section id="result" hidden aria-labelledby="r-name"></section>
 </main>
 
-<footer id="site-footer"></footer>
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
+<footer id="site-footer"></footer>
 <script src="content.js"></script>
 <script src="app.js"></script>
 </body>

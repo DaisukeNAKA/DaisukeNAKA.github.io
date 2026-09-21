@@ -41,6 +41,8 @@
   })();
   /* アプリ内ブラウザは「×」で元の投稿に戻れる。ここが最も摩擦の低い導線になる。 */
   var canCloseBack = (caps.inapp === "instagram" || caps.inapp === "threads" || caps.inapp === "facebook");
+  /* アニメーションを切っている人には、遷移の待ち時間も無意味な空白になります。 */
+  var reduceMotion = !!(window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches);
 
   var store = {
     get: function (k) { try { return window.localStorage.getItem(k); } catch (e) { return null; } },
@@ -110,7 +112,11 @@
     t.textContent = msg;
     t.classList.add("on");
     clearTimeout(toastT);
-    toastT = setTimeout(function () { t.classList.remove("on"); }, 2600);
+    toastT = setTimeout(function () {
+      t.classList.remove("on");
+      /* opacity:0 は支援技術のツリーから外れないため、文言自体を消します。 */
+      setTimeout(function () { if (!t.classList.contains("on")) { t.textContent = ""; } }, 320);
+    }, 2600);
   }
 
   /* ---- コピー：clipboard → execCommand → 手動選択。
@@ -120,6 +126,9 @@
     back.className = "backdrop";
     var box = document.createElement("div");
     box.className = "manual-copy";
+    box.setAttribute("role", "dialog");
+    box.setAttribute("aria-modal", "true");
+    box.setAttribute("aria-label", "文面を手動でコピー");
     var p = document.createElement("p");
     p.style.cssText = "font-size:13.5px;margin:0 0 10px;line-height:1.8";
     p.textContent = "自動コピーができませんでした。下の文面を長押しして選択し、コピーしてください。";
@@ -130,10 +139,13 @@
     close.type = "button";
     close.textContent = "閉じる";
     close.style.marginTop = "12px";
+    function onKey(e) { if (e.key === "Escape") { shut(); } }
     function shut() {
+      document.removeEventListener("keydown", onKey);
       if (back.parentNode) { back.parentNode.removeChild(back); }
       if (box.parentNode) { box.parentNode.removeChild(box); }
     }
+    document.addEventListener("keydown", onKey);
     close.addEventListener("click", shut);
     back.addEventListener("click", shut);
     box.appendChild(p); box.appendChild(ta); box.appendChild(close);
@@ -333,7 +345,8 @@
   }
 
   /* ========== 2軸マップ ========== */
-  function axisMap(X, Y, color, typeKey) {
+  function axisMap(X, Y, typeKey) {
+    var color = "var(--type)";
     var V = 320, P = 44, S = 232, cx = 160, cy = 160, half = S / 2;
     /* 点のハローが半径16あるため、枠線に食い込まないよう0.86まで内側に収めます。
        極値でも枠内に収まり、象限の読み取りは変わりません。 */
@@ -397,15 +410,24 @@
   }
 
   renderFooter($("site-footer"));
-  $("c-subtitle").textContent = C.copy.subtitle;
-  $("c-hook").textContent = C.copy.hook;
+  /* 導入の文言は index.html に静的に書き出してあります（低速回線でのずれと、
+     スクリプトが読めなかった場合の空ページを避けるため）。ここでは同じ値で上書きするだけです。
+     要素が無くても落ちないようにしておくと、HTMLの構成を変えてもページが壊れません。 */
+  function setText(id, value) {
+    var n = $(id);
+    if (n) { n.textContent = value; }
+  }
+  setText("c-subtitle", C.copy.subtitle);
+  setText("c-hook", C.copy.hook);
   bullets("c-promise", C.copy.promise);
   bullets("c-whofor", C.copy.whoFor);
-  $("start").textContent = C.copy.startButton;
-  $("c-privacy").textContent = C.copy.privacyLine;
-  $("c-author").textContent = C.copy.authorBlurb;
-  $("q-total").textContent = String(N);
-  $("q-segs").setAttribute("aria-valuemax", String(N));
+  setText("start", C.copy.startButton);
+  setText("start2", C.copy.startButton);
+  setText("c-privacy", C.copy.privacyShort || C.copy.privacyLine);
+  setText("c-privacy2", C.copy.privacyLine);
+  setText("c-author", C.copy.authorBlurb);
+  setText("q-total", String(N));
+  if ($("q-segs")) { $("q-segs").setAttribute("aria-valuemax", String(N)); }
   (function () {
     var segs = $("q-segs");
     for (var i = 0; i < N; i++) { segs.appendChild(document.createElement("i")); }
@@ -433,6 +455,15 @@
     try { history.replaceState(null, "", location.pathname + location.search + hash); }
     catch (e) { location.hash = hash; }
   }
+  /* 設問の行き来で履歴を積みません。積むと、結果まで進んだ人が元の投稿へ戻るのに
+     10回以上バックする必要が出ます。診断全体で履歴は1エントリに収めます。
+     replaceState は hashchange を発火しないため、route() を明示的に呼びます。 */
+  function nav(hash) {
+    var replaced = true;
+    try { history.replaceState(null, "", location.pathname + location.search + hash); }
+    catch (e) { replaced = false; location.hash = hash; }
+    if (replaced) { route(); }
+  }
 
   /* ========== 属性設問 ========== */
   function renderGate() {
@@ -446,15 +477,20 @@
       b.className = "opt" + (answers[0] === i ? " picked" : "");
       b.textContent = opt.label;
       b.setAttribute("data-mark", String(i + 1));
+      b.setAttribute("aria-pressed", String(answers[0] === i));
       b.addEventListener("click", function () {
         if (busy) { return; }
         busy = true;
         answers[0] = i;
-        Array.prototype.forEach.call(host.children, function (n) { n.classList.remove("picked"); });
+        Array.prototype.forEach.call(host.children, function (n) {
+          n.classList.remove("picked");
+          n.setAttribute("aria-pressed", "false");
+        });
         b.classList.add("picked");
+        b.setAttribute("aria-pressed", "true");
         save();
         track("yui_qualify", { is_business: !!opt.biz });
-        setTimeout(function () { busy = false; go("#/q/1"); }, 200);
+        setTimeout(function () { busy = false; nav("#/q/1"); }, reduceMotion ? 0 : 200);
       });
       host.appendChild(b);
     });
@@ -472,7 +508,8 @@
     for (var i = 0; i < segs.length; i++) {
       segs[i].className = (answers[i + 1] >= 0) ? "on" : (i === idx ? "now" : "");
     }
-    $("q-segs").setAttribute("aria-valuenow", String(firstUnanswered()));
+    $("q-segs").setAttribute("aria-valuenow", String(idx + 1));
+    $("q-segs").setAttribute("aria-valuetext", "全" + N + "問中 " + (idx + 1) + "問目");
   }
 
   function renderQuestion() {
@@ -490,6 +527,7 @@
       b.className = "opt" + (answers[idx + 1] === i ? " picked" : "");
       b.textContent = opt.label;
       b.setAttribute("data-mark", MARKS[i] || String(i + 1));
+      b.setAttribute("aria-pressed", String(answers[idx + 1] === i));
       b.addEventListener("click", function () { pick(i, b); });
       host.appendChild(b);
     });
@@ -508,8 +546,12 @@
     if (busy) { return; }
     busy = true;
     answers[idx + 1] = i;
-    Array.prototype.forEach.call($("q-opts").children, function (n) { n.classList.remove("picked"); });
+    Array.prototype.forEach.call($("q-opts").children, function (n) {
+      n.classList.remove("picked");
+      n.setAttribute("aria-pressed", "false");
+    });
     node.classList.add("picked");
+    node.setAttribute("aria-pressed", "true");
     if (navigator.vibrate) { try { navigator.vibrate(8); } catch (e) {} }
     paintSegs();
     save();
@@ -519,13 +561,17 @@
     setTimeout(function () {
       $("q-stage").classList.add("out");
       setTimeout(function () {
-        if (idx < N - 1) { go("#/q/" + (idx + 2)); }
-        else { go("#/r/" + encodeAnswers(answers)); }
-      }, 170);
-    }, 130);
+        if (idx < N - 1) { nav("#/q/" + (idx + 2)); }
+        else { nav("#/r/" + encodeAnswers(answers)); }
+      }, reduceMotion ? 0 : 170);
+    }, reduceMotion ? 0 : 130);
   }
 
-  $("q-back").addEventListener("click", function () { history.back(); });
+  /* history.back() に頼ると、アプリ内ブラウザがページを再生成したときに
+     前の設問ではなくサイト外へ出てしまいます。現在位置から行き先を決めます。 */
+  $("q-back").addEventListener("click", function () {
+    nav(idx > 0 ? ("#/q/" + idx) : "#/gate");
+  });
 
   function save() {
     if (!caps.storage) { return; }
@@ -561,6 +607,14 @@
     }
 
     screen("intro");
+    document.title = C.copy.title + " ｜ " + C.copy.subtitle;
+    /* 同一ページ内の戻る操作で導入へ帰ってきたときも、途中回答があれば続きから始められるように。 */
+    var f0 = firstUnanswered();
+    var startLabel = (answers[0] >= 0 && f0 > 0 && f0 < N)
+      ? (C.copy.resumeButton + "（" + (f0 + 1) + "問目から）")
+      : C.copy.startButton;
+    $("start").textContent = startLabel;
+    if ($("start2")) { $("start2").textContent = startLabel; }
     window.scrollTo(0, 0);
   }
   window.addEventListener("hashchange", route);
@@ -586,7 +640,8 @@
     var rx = C.prescriptions.filter(function (p) { return p.weakest === r.weakest; })[0] || C.prescriptions[0];
     var band = bandFor(r.total);
     var bandKey = band.min + "-" + band.max;
-    var color = typeColor(t);
+    var colorLight = safeHex(t.color, "#c8453c");
+    var colorDark = safeHex(t.colorDark, colorLight);
     var iv = C.intensity[r.level];
     var host = $("result");
     var base = String(CFG.siteUrl || "").replace(/\/$/, "");
@@ -598,7 +653,8 @@
       ? "（結スコア " + r.total + "）"
       : "（" + SUB_LABEL[r.strongest] + "がいちばん強く出ました）");
 
-    host.style.setProperty("--type", color);
+    host.style.setProperty("--type-light", colorLight);
+    host.style.setProperty("--type-dark", colorDark);
 
     var sharedBar = (src === "shared")
       ? '<div class="shared-bar"><p style="margin:0">' + esc(C.copy.sharedBanner) + "</p>" +
@@ -667,7 +723,7 @@
       '<p class="kicker">診断結果</p>' +
       '<div class="r-head">' +
         '<div class="seal" aria-hidden="true">結</div>' +
-        '<div><h2 class="r-name" id="r-name">' + esc(t.name) + "</h2>" +
+        '<div><h1 class="r-name" id="r-name" tabindex="-1">' + esc(t.name) + "</h1>" +
         '<p class="r-tag">' + esc(t.tagline) + " ／ " + esc(iv.label) + "</p></div>" +
       "</div>" +
       '<p class="r-catch">' + esc(t.catch) + "</p>" +
@@ -678,7 +734,7 @@
       '<p class="note" style="margin:-4px 0 14px">' + esc(C.copy.scoreDisclaimer) + "</p>" +
       '<p style="font-size:14.5px;color:var(--ink-2)">' + esc(band.comment) + "</p>" +
 
-      '<div class="map-wrap">' + axisMap(r.X, r.Y, color, r.key) + "</div>" +
+      '<div class="map-wrap">' + axisMap(r.X, r.Y, r.key) + "</div>" +
 
       '<div class="bars">' +
         bar("明快さ", r.sub.clarity, r.weakest === "clarity") +
@@ -737,6 +793,9 @@
     void host.offsetWidth;
     host.classList.add("fade");
     window.scrollTo(0, 0);
+    /* 結果が出たことを支援技術に伝え、共有リンクでもタイプが分かるようにします。 */
+    try { $("r-name").focus({ preventScroll: true }); } catch (e) {}
+    document.title = t.name + " ｜「結」の書き方診断";
 
     requestAnimationFrame(function () {
       var vals = [r.sub.clarity, r.sub.bridge, r.sub.space];
@@ -819,7 +878,7 @@
   }
 
   /* ========== 開始と復帰 ========== */
-  $("start").addEventListener("click", function () {
+  function onStart() {
     var f = firstUnanswered();
     track("yui_start", { is_resume: f > 0 && f < N });
     viewSource = "self";
@@ -827,7 +886,12 @@
     if (f >= N) { restart(); return; }
     if (answers[0] < 0) { go("#/gate"); return; }
     go("#/q/" + (f + 1));
-  });
+  }
+  $("start").addEventListener("click", onStart);
+  if ($("start2")) { $("start2").addEventListener("click", onStart); }
+  if ($("g-back")) {
+    $("g-back").addEventListener("click", function () { nav("#/"); });
+  }
 
   (function boot() {
     var mh = (location.hash || "").match(R_RE);
