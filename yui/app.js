@@ -79,7 +79,7 @@
         gtag("event", name, p);
       } catch (e) {}
     };
-    track("env_capability", {
+    track("yui_env", {
       has_web_share: caps.share, has_clipboard_api: caps.clip, has_localstorage: caps.storage
     });
   })();
@@ -176,15 +176,20 @@
     try {
       var pr = navigator.share(payload);
       if (pr && pr.then) {
+        /* Promise が返ってきた時点で結末は Promise が教えてくれます。
+           ウォッチドッグは「Promiseを返さない壊れた実装」のための保険なので、ここで解除します。
+           解除しないと、共有シートの表示が1.4秒を超えたときに
+           共有が成功しているのに裏でクリップボードを上書きしてしまいます。 */
+        clearTimeout(wd);
         pr.then(function () {
           settled = true; clearTimeout(wd);
-          track("share", { method: "web_share", share_status: "success" });
+          track("yui_share_click", { channel: "web_share", status: "success" });
         }, function (err) {
           settled = true; clearTimeout(wd);
           if (err && err.name === "AbortError") {
-            track("share", { method: "web_share", share_status: "abort" });
+            track("yui_share_click", { channel: "web_share", status: "abort" });
           } else {
-            track("share", { method: "web_share", share_status: "error" });
+            track("yui_share_click", { channel: "web_share", status: "error" });
             onFallback();
           }
         });
@@ -195,8 +200,10 @@
     }
   }
   /* ========== 回答コード（属性1問＋設問10問＝11answer, 22bit → 5文字） ========== */
-  var CODE_LEN = 5;
   var TOTAL_A = N + 1;   /* index 0 は属性設問 */
+  /* 1問2bit を base32（5bit/文字）に詰める。設問数を増やしても自動で伸びます。 */
+  var CODE_LEN = Math.ceil(TOTAL_A * 2 / 5);
+  var R_RE = new RegExp("^#\\/r\\/([a-z2-7]{" + CODE_LEN + "})$");
   function encodeAnswers(a) {
     var v = 0;
     for (var i = 0; i < TOTAL_A; i++) { v += (a[i] & 3) * Math.pow(4, i); }
@@ -241,9 +248,16 @@
       o.rawMin += lo; o.rawMax += hi; o.cMax += c; o.bMax += b; o.sMax += s;
       o.axMax += ax; o.ayMax += ay;
     });
+    /* 設問を編集した結果いずれかの幅が0になっても、スコアが NaN にならないようにします。 */
+    o.span = (o.rawMax - o.rawMin) || 1;
+    o.cMax = o.cMax || 1; o.bMax = o.bMax || 1; o.sMax = o.sMax || 1;
+    o.axMax = o.axMax || 1; o.ayMax = o.ayMax || 1;
     return o;
   })();
-  function clamp(v, lo, hi) { return v < lo ? lo : (v > hi ? hi : v); }
+  function clamp(v, lo, hi) {
+    if (typeof v !== "number" || !isFinite(v)) { return lo; }
+    return v < lo ? lo : (v > hi ? hi : v);
+  }
 
   function score(a) {
     var x = 0, y = 0, c = 0, b = 0, s = 0;
@@ -259,7 +273,7 @@
     var raw = c + b + s;
     /* 較正：理論下限〜上限を 8〜100 に写す。境界 52/77 との組み合わせで
        低22% / 中67% / 高11% の分布になる（全1,048,576通りで検算済み）。 */
-    var total = clamp(Math.round(8 + 92 * (raw - CAL.rawMin) / (CAL.rawMax - CAL.rawMin)), 0, 100);
+    var total = clamp(Math.round(8 + 92 * (raw - CAL.rawMin) / CAL.span), 0, 100);
 
     var X = Math.round(clamp(x / CAL.axMax, -1, 1) * 100);
     var Y = Math.round(clamp(y / CAL.ayMax, -1, 1) * 100);
@@ -277,7 +291,11 @@
     });
 
     var iv = Math.round((Math.abs(X) + Math.abs(Y)) / 2);
-    var level = iv >= 55 ? "strong" : (iv >= 25 ? "normal" : "balanced");
+    /* 閾値は全1,048,576通りの実分布から決めています。
+       55/25 では58%が「バランス」に落ち、型を名乗らせる直前にページ自身が
+       「あなたの型は像を結ばない」と言う状態になっていました。
+       30/15 で 振り切り28% / 標準47% / バランス25% になります。 */
+    var level = iv >= 30 ? "strong" : (iv >= 15 ? "normal" : "balanced");
     var axisNote = "";
     if (Math.abs(X) >= 50 && Math.abs(Y) < 20) { axisNote = C.intensity.axisXOnly; }
     else if (Math.abs(Y) >= 50 && Math.abs(X) < 20) { axisNote = C.intensity.axisYOnly; }
@@ -306,7 +324,13 @@
     if (attr === "light") { return false; }
     return !!(window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches);
   }
-  function typeColor(t) { return isDark() ? t.colorDark : t.color; }
+  function safeHex(c, fallback) {
+    return /^#[0-9a-fA-F]{3,8}$/.test(String(c)) ? String(c) : fallback;
+  }
+  function safeKey(k) { return String(k).replace(/[^A-Za-z0-9_-]/g, ""); }
+  function typeColor(t) {
+    return safeHex(isDark() ? t.colorDark : t.color, "#c8453c");
+  }
 
   /* ========== 2軸マップ ========== */
   function axisMap(X, Y, color, typeKey) {
@@ -360,6 +384,7 @@
       "<p>「結」の書き方診断</p>" +
       "<p>" + esc(C.copy.privacyLine) + "</p>" +
       (op.disclosure ? "<p>" + esc(op.disclosure) + "</p>" : "") +
+      (op.medicalDisclaimer ? "<p>" + esc(op.medicalDisclaimer) + "</p>" : "") +
       "<p>本ページは無料の診断コンテンツです。申込受付・決済・メールアドレスの取得は行いません。</p>" +
       (rows ? '<dl class="op-block">' + rows + "</dl>" : "");
   }
@@ -380,6 +405,7 @@
   $("c-privacy").textContent = C.copy.privacyLine;
   $("c-author").textContent = C.copy.authorBlurb;
   $("q-total").textContent = String(N);
+  $("q-segs").setAttribute("aria-valuemax", String(N));
   (function () {
     var segs = $("q-segs");
     for (var i = 0; i < N; i++) { segs.appendChild(document.createElement("i")); }
@@ -427,7 +453,7 @@
         Array.prototype.forEach.call(host.children, function (n) { n.classList.remove("picked"); });
         b.classList.add("picked");
         save();
-        track("qualify_answer", { choice_index: i, is_business: !!opt.biz });
+        track("yui_qualify", { is_business: !!opt.biz });
         setTimeout(function () { busy = false; go("#/q/1"); }, 200);
       });
       host.appendChild(b);
@@ -487,7 +513,9 @@
     if (navigator.vibrate) { try { navigator.vibrate(8); } catch (e) {} }
     paintSegs();
     save();
-    track("question_answer", { question_index: idx + 1, question_id: Q[idx].id, choice_index: i });
+    /* 何を選んだかは送りません。掲示している「回答は端末内だけ」と矛盾するためです。
+       何問目まで進んだかだけを送ります。 */
+    track("yui_progress", { step: idx + 1 });
     setTimeout(function () {
       $("q-stage").classList.add("out");
       setTimeout(function () {
@@ -522,12 +550,13 @@
       return;
     }
 
-    m = h.match(/^#\/r\/([a-z2-7]{5})$/);
+    m = h.match(R_RE);
     if (m) {
       var a = decodeAnswers(m[1]);
       if (!a) { replaceHash("#/"); screen("intro"); return; }
-      answers = a;
-      renderResult(viewSource);
+      /* 他人の共有リンクを開いただけで、閲覧者自身の途中回答を壊さないこと。 */
+      if (viewSource !== "shared") { answers = a; }
+      renderResult(viewSource, a);
       return;
     }
 
@@ -541,27 +570,31 @@
     var m = (location.search || "").match(/[?&]s=([A-Za-z0-9_-]{1,32})/);
     if (!m) { return ""; }
     var posts = CFG.posts || {};
-    return posts[m[1]] || "";
+    if (!Object.prototype.hasOwnProperty.call(posts, m[1])) { return ""; }
+    var u = posts[m[1]];
+    return (typeof u === "string" && /^https?:\/\//.test(u)) ? u : "";
   }
 
   /* ========== 結果 ========== */
-  function renderResult(src) {
+  function renderResult(src, ans) {
+    var data = ans || answers;
     for (var i = 0; i < TOTAL_A; i++) {
-      if (answers[i] < 0 || answers[i] > 3) { replaceHash("#/"); screen("intro"); return; }
+      if (data[i] < 0 || data[i] > 3) { replaceHash("#/"); screen("intro"); return; }
     }
-    var r = score(answers);
+    var r = score(data);
     var t = typeOf(r.key);
     var rx = C.prescriptions.filter(function (p) { return p.weakest === r.weakest; })[0] || C.prescriptions[0];
     var band = bandFor(r.total);
+    var bandKey = band.min + "-" + band.max;
     var color = typeColor(t);
     var iv = C.intensity[r.level];
     var host = $("result");
     var base = String(CFG.siteUrl || "").replace(/\/$/, "");
-    var typeUrl = base + "/t/" + t.key + ".html";
+    var typeUrl = base + "/t/" + safeKey(t.key) + ".html";
     var backPost = postFromQuery();
 
     /* シェア文：低スコアの人が沈黙しないよう、75未満は最も強い要素を言葉で出す */
-    var shareBody = t.shareText + (r.total >= 75
+    var shareBody = t.shareText + (r.total >= 78
       ? "（結スコア " + r.total + "）"
       : "（" + SUB_LABEL[r.strongest] + "がいちばん強く出ました）");
 
@@ -573,19 +606,25 @@
       : "";
 
     /* --- コメントCTA（全員） --- */
+    /* コメントに載せる一行。型だけだと、公開返信で弱点を推測して外します。
+       弱点まで書いてあれば返信が常に正しくなり、コメント欄を数えるだけで
+       型×弱点の分布が計測なしで読めます。 */
+    var commentLine = t.name + "／" + SUB_LABEL[r.weakest] + "が低めでした";
     var commentBody = C.copy.commentBody.replace("◯◯型", t.name);
     var commentCta =
       '<div class="cta">' +
         "<h2>" + esc(C.copy.commentHeading) + "</h2>" +
         "<p>" + esc(commentBody) + "</p>" +
-        (canCloseBack ? '<p class="note" style="margin:0 0 14px">' + esc(C.copy.commentInapp) + "</p>" : "") +
-        '<button class="btn" id="cp-type" type="button">「' + esc(t.name) + "」をコピーする</button>" +
-        (backPost ? '<a class="btn btn-ghost" id="back-post" href="' + esc(backPost) + '" target="_blank" rel="noopener">' + esc(C.copy.commentBack) + "</a>"
-                  : (!canCloseBack && CFG.profileUrl
-                      ? '<a class="btn btn-ghost" id="back-post" href="' + esc(CFG.profileUrl) + '" target="_blank" rel="noopener">投稿を開く</a>'
-                      : "")) +
-        (!canCloseBack && !backPost && !CFG.profileUrl
-          ? '<p class="note" style="margin-top:12px">' + esc(C.copy.commentFallback) + "</p>" : "") +
+        (canCloseBack ? '<p class="note" style="margin:0 0 14px">' +
+           esc(backPost ? C.copy.commentInappPost : C.copy.commentInapp) + "</p>" : "") +
+        '<button class="btn" id="cp-type" type="button">「' + esc(commentLine) + "」をコピー</button>" +
+        (backPost
+          ? '<a class="btn btn-ghost" id="back-post" href="' + esc(backPost) +
+            '" target="_blank" rel="noopener">' + esc(C.copy.commentBack) + "</a>"
+          : (CFG.profileUrl
+              ? '<a class="btn btn-ghost" id="back-post" href="' + esc(CFG.profileUrl) +
+                '" target="_blank" rel="noopener">投稿を開く</a>'
+              : '<p class="note" style="margin-top:12px">' + esc(C.copy.commentFallback) + "</p>")) +
       "</div>";
 
     /* --- 商談CTA（仕事で書いている方にだけ） --- */
@@ -596,13 +635,24 @@
           "<p>" + esc(C.copy.bizBody) + "</p>" +
           '<div class="cta-limit">' + esc(C.copy.bizLimit) + "</div>" +
           (CFG.dmUrl
-            ? '<a class="btn" id="dm-go" href="' + esc(CFG.dmUrl) + '" target="_blank" rel="noopener">' + esc(C.copy.bizButton) + "</a>" +
-              '<button class="btn btn-ghost" id="dm-copy" type="button">' + esc(C.copy.bizCopyButton) + "</button>" +
-              '<p class="note" style="margin-top:12px">' + esc(C.copy.bizDmNote) + "</p>"
-            : '<button class="btn btn-ghost" id="dm-copy" type="button">' + esc(C.copy.bizCopyButton) + "</button>" +
-              '<p class="note" style="margin-top:12px">' + esc(C.copy.bizNoDmNote) + "</p>") +
+            ? '<a class="btn" id="dm-go" href="' + esc(CFG.dmUrl) +
+              '" target="_blank" rel="noopener">' + esc(C.copy.bizButton) + "</a>"
+            : (CFG.profileUrl
+                ? '<a class="btn" id="dm-go" href="' + esc(CFG.profileUrl) +
+                  '" target="_blank" rel="noopener">' + esc(C.copy.bizProfileButton) + "</a>"
+                : "")) +
+          '<button class="btn btn-ghost" id="dm-copy" type="button">' + esc(C.copy.bizCopyButton) + "</button>" +
+          '<p class="note" style="margin-top:12px">' +
+            esc(CFG.dmUrl ? C.copy.bizDmNote : C.copy.bizNoDmNote) + "</p>" +
         "</div>"
-      : "";
+      : (CFG.profileUrl
+          ? '<div class="cta">' +
+              "<h2>" + esc(C.copy.softHeading) + "</h2>" +
+              "<p>" + esc(C.copy.softBody) + "</p>" +
+              '<a class="btn btn-ghost" id="soft-go" href="' + esc(CFG.profileUrl) +
+              '" target="_blank" rel="noopener">' + esc(C.copy.softButton) + "</a>" +
+            "</div>"
+          : "");
 
     /* --- LINE（config.lineUrl があるときだけ） --- */
     var lineCta = CFG.lineUrl
@@ -638,6 +688,10 @@
       '<p class="note" style="margin-top:12px">' + esc(C.copy.subScoreNote) + "</p>" +
       '<div class="intensity-note">' + esc(iv.note) + (r.axisNote ? "<br><br>" + esc(r.axisNote) : "") + "</div>" +
 
+      /* 型を名乗る気持ちがいちばん強いのは、型名とスコアを見た直後です。
+         本文と処方箋を読ませたあとでは、6画面ぶんスクロールした先になります。 */
+      commentCta +
+
       '<h2 class="sec">あなたの締め方</h2><p>' + esc(t.summary) + "</p>" +
       '<h2 class="sec">強みが出る場所</h2><p>' + esc(t.strength) + "</p>" +
       '<h2 class="sec">取りこぼしているもの</h2><p>' + esc(t.leak) + "</p>" +
@@ -668,10 +722,11 @@
         '<button class="btn" id="sh-native" type="button">シェアする</button>' +
         '<button class="btn btn-ghost" id="sh-copy" type="button">文面をコピー</button>' +
         '<a class="btn btn-ghost" id="sh-x" target="_blank" rel="noopener">Xに投稿</a>' +
-        '<a class="btn btn-ghost" href="t/' + t.key + '.html">タイプ解説を読む</a>' +
       "</div>" +
+      '<p class="note" style="margin-top:12px"><a href="t/' + esc(safeKey(t.key)) +
+        '.html">このタイプの解説ページ（人に見せるとき用）</a></p>' +
 
-      commentCta + bizCta + lineCta +
+      bizCta + lineCta +
 
       '<p style="margin:26px 0 0;text-align:center"><a href="about.html">' + esc(C.copy.aboutLink) + "</a></p>" +
       '<button class="btn btn-ghost" id="retake" type="button" style="margin-top:20px">' +
@@ -694,54 +749,59 @@
       encodeURIComponent(shareBody + "\n" + typeUrl);
 
     on("sh-native", function () {
-      track("share_open", { result_type: t.key, yui_score: r.total });
       nativeShare({ title: C.copy.title, text: shareBody, url: typeUrl }, function () {
         copyText(shareBody + "\n" + typeUrl, "文面をコピーしました");
-        track("share", { method: "copy_text", share_status: "fallback_used" });
+        track("yui_share_click", { channel: "copy_text", status: "fallback_used" });
       });
     });
     on("sh-copy", function () {
-      track("share", { method: "copy_text", share_status: "success", result_type: t.key });
+      track("yui_share_click", { channel: "copy_text", status: "success", type: t.key });
       copyText(shareBody + "\n" + typeUrl, "文面をコピーしました");
     });
-    on("sh-x", function () { track("share", { method: "x", result_type: t.key }); });
+    on("sh-x", function () { track("yui_share_click", { channel: "x", type: t.key }); });
     on("rx-copy", function () {
-      track("prescription_copy", { weakest_axis: r.weakest });
+      track("yui_rx_copy", { weakest: r.weakest });
       copyText(rx.title + "\n\n" + rx.formula, "型をコピーしました");
     });
     on("cp-type", function () {
-      track("comment_copy", { result_type: t.key, has_back_post: !!backPost });
-      copyText(t.name + "でした", "「" + t.name + "でした」をコピーしました");
+      track("yui_cta_comment", { type: t.key, weakest: r.weakest, has_back_post: !!backPost });
+      copyText(commentLine, "コピーしました。コメント欄に貼り付けてください");
     });
-    on("back-post", function () { track("outbound_click", { cta_id: "back_to_post", result_type: t.key }); });
+    on("back-post", function () { track("yui_cta_post", { type: t.key }); });
     on("dm-go", function () {
-      track("generate_lead", {
-        lead_source: "yui_quiz", method: "dm_link",
-        result_type: t.key, yui_score: r.total, weakest_axis: r.weakest
-      });
+      track("yui_cta_dm", { type: t.key, score_band: bandKey, weakest: r.weakest, method: "link" });
+      track("generate_lead", { lead_source: "yui_quiz", currency: "JPY", value: 0 });
     });
     on("dm-copy", function () {
-      track("generate_lead", {
-        lead_source: "yui_quiz", method: "dm_copy",
-        result_type: t.key, yui_score: r.total, weakest_axis: r.weakest
-      });
+      track("yui_cta_dm", { type: t.key, score_band: bandKey, weakest: r.weakest, method: "copy" });
+      track("generate_lead", { lead_source: "yui_quiz", currency: "JPY", value: 0 });
       copyText(dmLine, "送る一行をコピーしました");
     });
+    on("soft-go", function () {
+      track("yui_cta_profile", { type: t.key });
+    });
     on("line-go", function () {
-      track("generate_lead", { lead_source: "yui_quiz", method: "line", result_type: t.key });
+      track("yui_cta_line", { type: t.key, score_band: bandKey });
+      track("generate_lead", { lead_source: "yui_quiz", currency: "JPY", value: 0 });
     });
-    on("retake", restart);
-    on("own", restart);
+    on("retake", function () { track("yui_retake", { type: t.key }); restart(); });
+    on("own", function () { track("yui_retake", { type: t.key, from: "shared" }); restart(); });
 
-    track("result_view", {
-      result_type: t.key, yui_score: r.total, weakest_axis: r.weakest,
-      intensity: r.intensity, is_business: r.biz, view_source: src
+    /* スコアは生値ではなく帯で送ります。個票を外部に出さないためと、
+       運用資料が帯で設計されているためです。 */
+    track("yui_result_view", {
+      type: t.key, score_band: bandKey, weakest: r.weakest,
+      intensity_level: r.level, is_business: r.biz, view_source: src
     });
-    save();
+    /* 共有された他人の結果を、閲覧者の保存データとして書き込まないこと。
+       自分で完走した場合は pick() の中で保存済みです。 */
+    if (src !== "shared") { save(); }
   }
 
   function restart() {
     store.del(SKEY);
+    var rh = $("resume-host");
+    if (rh) { rh.innerHTML = ""; }
     for (var k = 0; k < TOTAL_A; k++) { answers[k] = -1; }
     idx = 0;
     viewSource = "self";
@@ -760,17 +820,28 @@
 
   /* ========== 開始と復帰 ========== */
   $("start").addEventListener("click", function () {
-    track("quiz_start", { is_resume: firstUnanswered() > 0 });
+    var f = firstUnanswered();
+    track("yui_start", { is_resume: f > 0 && f < N });
     viewSource = "self";
-    if (answers[0] < 0) { go("#/gate"); }
-    else { go("#/q/" + (Math.min(firstUnanswered(), N - 1) + 1)); }
+    /* 完走済みのデータが残っている再訪では、最終問ではなく最初からやり直します。 */
+    if (f >= N) { restart(); return; }
+    if (answers[0] < 0) { go("#/gate"); return; }
+    go("#/q/" + (f + 1));
   });
 
   (function boot() {
-    if (/^#\/r\/[a-z2-7]{5}$/.test(location.hash || "")) {
-      viewSource = "shared";
+    var mh = (location.hash || "").match(R_RE);
+    if (mh) {
+      /* 保存済みの自分の回答と一致するコードなら、リロードでも自分の結果として扱います。 */
+      var mine = false, sv = null;
+      try { sv = JSON.parse(store.get(SKEY) || "null"); } catch (e) { sv = null; }
+      if (sv && sv.v === 2 && sv.a && sv.a.length === TOTAL_A && sv.a.indexOf(-1) < 0) {
+        mine = (encodeAnswers(sv.a) === mh[1]);
+        if (mine) { answers = sv.a; }
+      }
+      viewSource = mine ? "self" : "shared";
       route();
-      track("page_view", { screen_name: "result_shared" });
+      track("page_view", { screen_name: mine ? "result" : "result_shared" });
       return;
     }
     var raw = store.get(SKEY);
@@ -787,7 +858,7 @@
               '<button class="btn" id="resume" type="button" style="margin-top:10px">' +
               esc(C.copy.resumeButton) + "（" + (f + 1) + "問目から）</button></div>";
             $("resume").addEventListener("click", function () {
-              track("quiz_resume", { resume_from_q: f + 1 });
+              track("yui_resume", { resume_from_q: f + 1 });
               go("#/q/" + (f + 1));
             });
           }
