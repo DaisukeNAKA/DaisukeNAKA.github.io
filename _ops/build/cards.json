@@ -1,0 +1,47 @@
+[
+  {
+    "slug": "yui-top-v1",
+    "accent": "#c8453c",
+    "kicker": "無料 ／ 10問 ／ 約3分",
+    "headline": "「結」の\n書き方診断",
+    "headlineSize": 68,
+    "sub": "最後の3行が、\n読者の明日を決めます。",
+    "foot": "daisukenaka.github.io/yui"
+  },
+  {
+    "slug": "soukatsu-v1",
+    "accent": "#2e4a62",
+    "kicker": "「結」の書き方診断 ／ 4タイプ",
+    "headline": "総括型",
+    "headlineSize": 74,
+    "sub": "あなたの結は正しい。正しすぎて、\n読者は反論も行動も思いつきません。",
+    "foot": "きれいに畳んで、机に置く"
+  },
+  {
+    "slug": "yoin-v1",
+    "accent": "#6b5b8e",
+    "kicker": "「結」の書き方診断 ／ 4タイプ",
+    "headline": "余韻型",
+    "headlineSize": 74,
+    "sub": "読後感は満点。ただ、その感動は\n誰にも伝えられないまま消えます。",
+    "foot": "最後の一行を、風景で終える"
+  },
+  {
+    "slug": "sengen-v1",
+    "accent": "#c8453c",
+    "kicker": "「結」の書き方診断 ／ 4タイプ",
+    "headline": "宣言型",
+    "headlineSize": 74,
+    "sub": "行き先は明確。ただ、その旗はまだ\nあなたのもので、読者のものではない。",
+    "foot": "旗を立てて、背中を押す"
+  },
+  {
+    "slug": "shoutai-v1",
+    "accent": "#2f7d5d",
+    "kicker": "「結」の書き方診断 ／ 4タイプ",
+    "headline": "招待型",
+    "headlineSize": 74,
+    "sub": "読者は動きます。ただ、どこへ向かうかを\nあなたが決めていません。",
+    "foot": "扉を開けて、名前を呼ぶ"
+  }
+]
