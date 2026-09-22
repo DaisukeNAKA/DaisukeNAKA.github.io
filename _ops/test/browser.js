@@ -22,7 +22,7 @@ global.window = {};
 require(path.join(ROOT, 'yui', 'content.js'));
 const C = global.window.YUI_CONTENT;
 const Q = C.questions;
-const NAMES = { soukatsu: '総括型', yoin: '余韻型', sengen: '宣言型', shoutai: '招待型' };
+const NAMES = { sekkei: '設計型', kyomei: '共鳴型', suishin: '推進型', chokkan: '直感型' };
 
 let fail = 0;
 const ok = (m) => console.log('  ok   ' + m);
@@ -35,8 +35,8 @@ function pickFor(target) {
   return Q.map((q) => {
     let best = 0, bestScore = -99;
     q.options.forEach((o, i) => {
-      const k = (o.x < 0) ? ((o.y < 0) ? 'soukatsu' : 'sengen')
-                          : ((o.y < 0) ? 'yoin' : 'shoutai');
+      const k = (o.x < 0) ? ((o.y < 0) ? 'sekkei' : 'suishin')
+                          : ((o.y < 0) ? 'kyomei' : 'chokkan');
       if (k === target) {
         const s = Math.abs(o.x) + Math.abs(o.y);
         if (s > bestScore) { bestScore = s; best = i; }
@@ -91,7 +91,7 @@ const readStore = (p) =>
     check('2軸マップが描画される', await page.isVisible('.map'));
     check('処方箋が出る', await page.isVisible('.rx'));
     check('コメントCTAが出る', (await page.locator('#cp-type').count()) === 1);
-    check('商談CTAが出る（仕事で書く層）', (await page.locator('#dm-copy').count()) === 1);
+    check('無料相談CTAが出る（活動中の層）', (await page.locator('#dm-copy').count()) === 1);
     check('アプリ内ブラウザ向けの案内が出る', (await page.textContent('#result')).includes('左上の'));
     check('結果ハッシュが5文字', /^#\/r\/[a-z2-7]{5}$/.test(new URL(page.url()).hash));
     const shareHref = await page.getAttribute('#sh-x', 'href');
@@ -106,9 +106,9 @@ const readStore = (p) =>
   head('■ 属性による出し分け');
   await page.evaluate(() => { try { localStorage.clear(); } catch (e) {} });
   await page.goto(BASE, { waitUntil: 'networkidle' });
-  await answer(page, { qualify: 3, picks: pickFor('sengen') });   // 趣味・記録
+  await answer(page, { qualify: 3, picks: pickFor('suishin') });   // いまは活動していない
   await page.waitForSelector('#result:not([hidden])');
-  check('趣味で書く層に商談CTAを出さない', (await page.locator('#dm-copy').count()) === 0);
+  check('活動していない層に無料相談CTAを出さない', (await page.locator('#dm-copy').count()) === 0);
   check('コメントCTAは出す', (await page.locator('#cp-type').count()) === 1);
   const sharedUrl = page.url();
 
@@ -117,7 +117,7 @@ const readStore = (p) =>
   await page.evaluate(() => { try { localStorage.clear(); } catch (e) {} });
   await page.goto('about:blank');
   await page.goto(BASE, { waitUntil: 'networkidle' });
-  await answer(page, { qualify: 2, picks: pickFor('yoin'), count: 3 });   // 3問で中断
+  await answer(page, { qualify: 2, picks: pickFor('kyomei'), count: 3 });   // 3問で中断
   const before = await readStore(page);
   check('途中回答が保存される', !!before && JSON.parse(before).a.indexOf(-1) > 0);
   await page.goto('about:blank');
@@ -129,7 +129,7 @@ const readStore = (p) =>
   head('■ 自分の結果のリロード');
   await page.evaluate(() => { try { localStorage.clear(); } catch (e) {} });
   await page.goto(BASE, { waitUntil: 'networkidle' });
-  await answer(page, { picks: pickFor('shoutai') });
+  await answer(page, { picks: pickFor('chokkan') });
   await page.waitForSelector('#result:not([hidden])');
   check('自分の結果に共有バナーは出ない', !(await page.textContent('#result')).includes('共有された診断結果'));
   await page.reload({ waitUntil: 'networkidle' });

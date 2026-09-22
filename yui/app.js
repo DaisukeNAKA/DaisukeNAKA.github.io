@@ -15,7 +15,7 @@
   var N = Q.length;
   var SKEY = "yui.v1.progress";
   var B32 = "abcdefghijklmnopqrstuvwxyz234567";
-  var SUB_LABEL = { clarity: "明快さ", bridge: "接続", space: "余白" };
+  var SUB_LABEL = { kijun: "基準", dentatsu: "伝達", ketsudan: "決断" };
 
   /* ========== 環境判定 ========== */
   var caps = (function () {
@@ -244,25 +244,25 @@
 
   /* ========== 採点（較正は設問データから実行時に算出） ========== */
   var CAL = (function () {
-    var o = { rawMin: 0, rawMax: 0, cMax: 0, bMax: 0, sMax: 0, axMax: 0, ayMax: 0 };
+    var o = { rawMin: 0, rawMax: 0, kMax: 0, dMax: 0, tMax: 0, axMax: 0, ayMax: 0 };
     Q.forEach(function (q) {
-      var lo = Infinity, hi = -Infinity, c = 0, b = 0, s = 0, ax = 0, ay = 0;
+      var lo = Infinity, hi = -Infinity, k = 0, d = 0, t = 0, ax = 0, ay = 0;
       q.options.forEach(function (opt) {
-        var sum = opt.clarity + opt.bridge + opt.space;
+        var sum = opt.kijun + opt.dentatsu + opt.ketsudan;
         if (sum < lo) { lo = sum; }
         if (sum > hi) { hi = sum; }
-        if (opt.clarity > c) { c = opt.clarity; }
-        if (opt.bridge > b) { b = opt.bridge; }
-        if (opt.space > s) { s = opt.space; }
+        if (opt.kijun > k) { k = opt.kijun; }
+        if (opt.dentatsu > d) { d = opt.dentatsu; }
+        if (opt.ketsudan > t) { t = opt.ketsudan; }
         if (Math.abs(opt.x) > ax) { ax = Math.abs(opt.x); }
         if (Math.abs(opt.y) > ay) { ay = Math.abs(opt.y); }
       });
-      o.rawMin += lo; o.rawMax += hi; o.cMax += c; o.bMax += b; o.sMax += s;
+      o.rawMin += lo; o.rawMax += hi; o.kMax += k; o.dMax += d; o.tMax += t;
       o.axMax += ax; o.ayMax += ay;
     });
     /* 設問を編集した結果いずれかの幅が0になっても、スコアが NaN にならないようにします。 */
     o.span = (o.rawMax - o.rawMin) || 1;
-    o.cMax = o.cMax || 1; o.bMax = o.bMax || 1; o.sMax = o.sMax || 1;
+    o.kMax = o.kMax || 1; o.dMax = o.dMax || 1; o.tMax = o.tMax || 1;
     o.axMax = o.axMax || 1; o.ayMax = o.ayMax || 1;
     return o;
   })();
@@ -272,30 +272,30 @@
   }
 
   function score(a) {
-    var x = 0, y = 0, c = 0, b = 0, s = 0;
+    var x = 0, y = 0, k = 0, d = 0, t = 0;
     for (var i = 0; i < N; i++) {
       var o = Q[i].options[a[i + 1]];   /* a[0] は属性設問 */
-      x += o.x; y += o.y; c += o.clarity; b += o.bridge; s += o.space;
+      x += o.x; y += o.y; k += o.kijun; d += o.dentatsu; t += o.ketsudan;
     }
     var sub = {
-      clarity: Math.round(100 * c / CAL.cMax),
-      bridge: Math.round(100 * b / CAL.bMax),
-      space: Math.round(100 * s / CAL.sMax)
+      kijun: Math.round(100 * k / CAL.kMax),
+      dentatsu: Math.round(100 * d / CAL.dMax),
+      ketsudan: Math.round(100 * t / CAL.tMax)
     };
-    var raw = c + b + s;
-    /* 較正：理論下限〜上限を 8〜100 に写す。境界 52/77 との組み合わせで
-       低22% / 中67% / 高11% の分布になる（全1,048,576通りで検算済み）。 */
+    var raw = k + d + t;
+    /* 較正：理論下限〜上限を 8〜100 に写す。境界 49/72 との組み合わせで
+       低19% / 中65% / 高16% の分布になる（全1,048,576通りで検算済み）。 */
     var total = clamp(Math.round(8 + 92 * (raw - CAL.rawMin) / CAL.span), 0, 100);
 
     var X = Math.round(clamp(x / CAL.axMax, -1, 1) * 100);
     var Y = Math.round(clamp(y / CAL.ayMax, -1, 1) * 100);
-    if (X === 0) { X = (sub.space > sub.clarity) ? 1 : -1; }
-    if (Y === 0) { Y = (sub.bridge >= 50) ? 1 : -1; }
+    if (X === 0) { X = (sub.dentatsu > sub.kijun) ? 1 : -1; }
+    if (Y === 0) { Y = (sub.ketsudan >= 50) ? 1 : -1; }
 
-    var key = X < 0 ? (Y < 0 ? "soukatsu" : "sengen")
-                    : (Y < 0 ? "yoin" : "shoutai");
+    var key = X < 0 ? (Y < 0 ? "sekkei" : "suishin")
+                    : (Y < 0 ? "kyomei" : "chokkan");
 
-    var order = ["bridge", "clarity", "space"];
+    var order = ["ketsudan", "kijun", "dentatsu"];
     var weakest = order[0], strongest = order[0];
     order.forEach(function (k) {
       if (sub[k] < sub[weakest]) { weakest = k; }
@@ -368,8 +368,8 @@
     var px = cx + clamp(X / 100, -1, 1) * half * INSET;
     var py = cy - clamp(Y / 100, -1, 1) * half * INSET;
     var quad = {
-      sengen: { x: P, y: P }, shoutai: { x: cx, y: P },
-      soukatsu: { x: P, y: cy }, yoin: { x: cx, y: cy }
+      suishin: { x: P, y: P }, chokkan: { x: cx, y: P },
+      sekkei: { x: P, y: cy }, kyomei: { x: cx, y: cy }
     }[typeKey];
     function lab(key, x, y, anchor, text) {
       var on = (key === typeKey);
@@ -378,7 +378,7 @@
         'font-weight="' + (on ? 700 : 400) + '">' + text + '</text>';
     }
     return '<svg class="map" viewBox="0 0 ' + V + ' ' + V + '" role="img" ' +
-      'aria-label="結の2軸マップ。横軸は結論の所有、縦軸は締めの機能。あなたの位置が点で示されています。">' +
+      'aria-label="婚活の2軸マップ。横軸は相手の選び方、縦軸は進め方。あなたの位置が点で示されています。">' +
       '<rect x="' + P + '" y="' + P + '" width="' + S + '" height="' + S + '" rx="6" fill="var(--surface-2)" stroke="var(--line)" stroke-width="1"/>' +
       '<rect x="' + quad.x + '" y="' + quad.y + '" width="' + half + '" height="' + half + '" fill="' + color + '" opacity=".10"/>' +
       '<line x1="108" y1="' + P + '" x2="108" y2="276" stroke="var(--line)" stroke-dasharray="2 4" opacity=".55"/>' +
@@ -387,14 +387,14 @@
       '<line x1="' + P + '" y1="212" x2="276" y2="212" stroke="var(--line)" stroke-dasharray="2 4" opacity=".55"/>' +
       '<line x1="' + P + '" y1="' + cy + '" x2="276" y2="' + cy + '" stroke="var(--line)" stroke-width="1"/>' +
       '<line x1="' + cx + '" y1="' + P + '" x2="' + cx + '" y2="276" stroke="var(--line)" stroke-width="1"/>' +
-      lab("sengen", 56, 64, "start", "宣言型") +
-      lab("shoutai", 264, 64, "end", "招待型") +
-      lab("soukatsu", 56, 262, "start", "総括型") +
-      lab("yoin", 264, 262, "end", "余韻型") +
-      '<text x="160" y="26" text-anchor="middle" font-size="10" fill="var(--ink-3)">開く ｜ 次の行動へ送り出す</text>' +
-      '<text x="160" y="302" text-anchor="middle" font-size="10" fill="var(--ink-3)">閉じる ｜ 納得で終える</text>' +
-      '<text transform="rotate(-90 18 160)" x="18" y="160" text-anchor="middle" font-size="10" fill="var(--ink-3)">引き受ける ｜ 断定</text>' +
-      '<text transform="rotate(90 302 160)" x="302" y="160" text-anchor="middle" font-size="10" fill="var(--ink-3)">委ねる ｜ 問い</text>' +
+      lab("suishin", 56, 64, "start", "推進型") +
+      lab("chokkan", 264, 64, "end", "直感型") +
+      lab("sekkei", 56, 262, "start", "設計型") +
+      lab("kyomei", 264, 262, "end", "共鳴型") +
+      '<text x="160" y="26" text-anchor="middle" font-size="10" fill="var(--ink-3)">動きながら決める</text>' +
+      '<text x="160" y="302" text-anchor="middle" font-size="10" fill="var(--ink-3)">見極めてから決める</text>' +
+      '<text transform="rotate(-90 18 160)" x="18" y="160" text-anchor="middle" font-size="10" fill="var(--ink-3)">条件で選ぶ</text>' +
+      '<text transform="rotate(90 302 160)" x="302" y="160" text-anchor="middle" font-size="10" fill="var(--ink-3)">感覚で選ぶ</text>' +
       '<circle cx="' + px + '" cy="' + py + '" r="16" fill="' + color + '" opacity=".16"/>' +
       '<circle cx="' + px + '" cy="' + py + '" r="6.5" fill="' + color + '" stroke="var(--paper)" stroke-width="2"/>' +
       '</svg>';
@@ -663,7 +663,7 @@
     var backPost = postFromQuery();
 
     /* シェア文：低スコアの人が沈黙しないよう、75未満は最も強い要素を言葉で出す */
-    var shareBody = t.shareText + (r.total >= 78
+    var shareBody = t.shareText + (r.total >= 73
       ? "（結スコア " + r.total + "）"
       : "（" + SUB_LABEL[r.strongest] + "がいちばん強く出ました）");
 
@@ -676,10 +676,10 @@
       : "";
 
     /* --- コメントCTA（全員） --- */
-    /* コメントに載せる一行。型だけだと、公開返信で弱点を推測して外します。
-       弱点まで書いてあれば返信が常に正しくなり、コメント欄を数えるだけで
-       型×弱点の分布が計測なしで読めます。 */
-    var commentLine = t.name + "／" + SUB_LABEL[r.weakest] + "が低めでした";
+    /* コメントに載せるのは型名だけにします。婚活は、公開の場で自分の状況を
+       明かしたくない層が厚い領域です。弱点まで書かせると投稿が止まります。
+       弱点はDM側（dmLine）で受け取り、そこから個別の返信につなげます。 */
+    var commentLine = t.name + "でした";
     var commentBody = C.copy.commentBody.replace("◯◯型", t.name);
     var commentCta =
       '<div class="cta">' +
@@ -697,8 +697,8 @@
               : '<p class="note" style="margin-top:12px">' + esc(C.copy.commentFallback) + "</p>")) +
       "</div>";
 
-    /* --- 商談CTA（仕事で書いている方にだけ） --- */
-    var dmLine = t.name + "／" + SUB_LABEL[r.weakest] + "が低いと出ました。締めを一本みてもらえますか。";
+    /* --- 無料相談CTA（活動中・検討中の方にだけ） --- */
+    var dmLine = t.name + "／" + SUB_LABEL[r.weakest] + "が低いと出ました。無料相談の話を聞かせてください。";
     var bizCta = r.biz
       ? '<div class="cta">' +
           "<h2>" + esc(C.copy.bizHeading) + "</h2>" +
@@ -751,9 +751,9 @@
       '<div class="map-wrap">' + axisMap(r.X, r.Y, r.key) + "</div>" +
 
       '<div class="bars">' +
-        bar("明快さ", r.sub.clarity, r.weakest === "clarity") +
-        bar("接続", r.sub.bridge, r.weakest === "bridge") +
-        bar("余白", r.sub.space, r.weakest === "space") +
+        bar("基準", r.sub.kijun, r.weakest === "kijun") +
+        bar("伝達", r.sub.dentatsu, r.weakest === "dentatsu") +
+        bar("決断", r.sub.ketsudan, r.weakest === "ketsudan") +
       "</div>" +
       '<p class="note" style="margin-top:12px">' + esc(C.copy.subScoreNote) + "</p>" +
       '<div class="intensity-note">' + esc(iv.note) + (r.axisNote ? "<br><br>" + esc(r.axisNote) : "") + "</div>" +
@@ -762,27 +762,27 @@
          本文と処方箋を読ませたあとでは、6画面ぶんスクロールした先になります。 */
       commentCta +
 
-      '<h2 class="sec">あなたの締め方</h2><p>' + esc(t.summary) + "</p>" +
+      '<h2 class="sec">あなたの進め方</h2><p>' + esc(t.summary) + "</p>" +
       '<h2 class="sec">強みが出る場所</h2><p>' + esc(t.strength) + "</p>" +
       '<h2 class="sec">取りこぼしているもの</h2><p>' + esc(t.leak) + "</p>" +
 
-      '<h2 class="sec">書き換えの実例</h2>' +
-      '<div class="ex"><p class="ex-head">BEFORE ／ やりがちな締め</p><div class="ex-body">' + esc(t.badExample) + "</div></div>" +
-      '<div class="ex after"><p class="ex-head">AFTER ／ 書き換えた締め</p><div class="ex-body">' + esc(t.goodExample) + "</div></div>" +
+      '<h2 class="sec">プロフィールの書き換え例</h2>' +
+      '<div class="ex"><p class="ex-head">BEFORE ／ ありがちな書き方</p><div class="ex-body">' + esc(t.badExample) + "</div></div>" +
+      '<div class="ex after"><p class="ex-head">AFTER ／ 書き換えた例</p><div class="ex-body">' + esc(t.goodExample) + "</div></div>" +
       '<p style="margin-top:16px;font-size:14.5px;color:var(--ink-2)">' + esc(t.exampleNote) + "</p>" +
 
-      '<h2 class="sec">相性のいい場面・避けたい場面</h2><p>' + esc(t.affinity) + "</p>" +
+      '<h2 class="sec">この型が生きる場面・つまずく場面</h2><p>' + esc(t.affinity) + "</p>" +
 
       '<h2 class="sec">あなたへの処方箋</h2>' +
       '<div class="rx">' +
         '<p class="rx-title">' + esc(rx.title) + "</p>" +
         '<p style="font-size:14.5px">' + esc(rx.diagnosis) + "</p>" +
-        '<p class="ex-head">型（そのまま埋めてください）</p>' +
+        '<p class="ex-head">手順（そのまま埋めてください）</p>' +
         '<div class="rx-formula">' + esc(rx.formula) + "</div>" +
         '<p class="ex-head">埋めた例</p>' +
         '<div class="rx-worked">' + esc(rx.worked) + "</div>" +
         '<p style="font-size:13.5px;color:var(--ink-2);margin:0">' + esc(rx.pitfall) + "</p>" +
-        '<button class="btn btn-ghost" id="rx-copy" type="button" style="margin-top:16px">この型をコピーする</button>' +
+        '<button class="btn btn-ghost" id="rx-copy" type="button" style="margin-top:16px">この手順をコピーする</button>' +
       "</div>" +
 
       '<h2 class="sec">' + esc(C.copy.shareHeading) + "</h2>" +
@@ -812,7 +812,7 @@
     document.title = t.name + " ｜「結」の書き方診断";
 
     requestAnimationFrame(function () {
-      var vals = [r.sub.clarity, r.sub.bridge, r.sub.space];
+      var vals = [r.sub.kijun, r.sub.dentatsu, r.sub.ketsudan];
       Array.prototype.forEach.call(host.querySelectorAll(".bar-track i"), function (n, i2) {
         n.style.width = vals[i2] + "%";
       });
@@ -834,7 +834,7 @@
     on("sh-x", function () { track("yui_share_click", { channel: "x", type: t.key }); });
     on("rx-copy", function () {
       track("yui_rx_copy", { weakest: r.weakest });
-      copyText(rx.title + "\n\n" + rx.formula, "型をコピーしました");
+      copyText(rx.title + "\n\n" + rx.formula, "手順をコピーしました");
     });
     on("cp-type", function () {
       track("yui_cta_comment", { type: t.key, weakest: r.weakest, has_back_post: !!backPost });

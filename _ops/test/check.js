@@ -77,7 +77,7 @@ Q.forEach((q, i) => {
     if (!o.label) { ng(where + ' に label がありません'); qBad++; }
     if (!num(o.x) || Math.abs(o.x) > 2) { ng(where + ' の x が -2〜2 の数値ではありません', String(o.x)); qBad++; }
     if (!num(o.y) || Math.abs(o.y) > 2) { ng(where + ' の y が -2〜2 の数値ではありません', String(o.y)); qBad++; }
-    ['clarity', 'bridge', 'space'].forEach((k) => {
+    ['kijun', 'dentatsu', 'ketsudan'].forEach((k) => {
       if (!num(o[k]) || o[k] < 0 || o[k] > 3) {
         ng(where + ` の ${k} が 0〜3 の数値ではありません`, String(o[k])); qBad++;
       }
@@ -94,7 +94,7 @@ if (!qBad) { ok('すべての設問の配点が有効な範囲に収まってい
 
 /* ---------------------------------------------------------------- タイプ */
 head('■ タイプ');
-const TYPE_KEYS = ['soukatsu', 'yoin', 'sengen', 'shoutai'];
+const TYPE_KEYS = ['sekkei', 'kyomei', 'suishin', 'chokkan'];
 const hex = (c) => /^#[0-9a-fA-F]{3,8}$/.test(String(c));
 if (!Array.isArray(C.types) || C.types.length !== 4) {
   ng('types が4つではありません');
@@ -116,8 +116,8 @@ if (!Array.isArray(C.types) || C.types.length !== 4) {
 }
 
 /* -------------------------------------------------------------- 処方箋 */
-head('■ 処方箋');
-const WEAK = ['clarity', 'bridge', 'space'];
+head('■ 処方箋（基準／伝達／決断に1本ずつ）');
+const WEAK = ['kijun', 'dentatsu', 'ketsudan'];
 WEAK.forEach((w) => {
   const rx = (C.prescriptions || []).filter((p) => p.weakest === w);
   if (rx.length !== 1) {
@@ -135,6 +135,25 @@ WEAK.forEach((w) => {
   }
 });
 if (!fail) { ok('3種の処方箋が1本ずつ揃っています'); }
+
+/* 各問に4象限が1つずつ揃っているか。崩れると特定の型へ到達できなくなります。 */
+head('■ 各問の象限の配置');
+let quadBad = 0;
+Q.forEach((q, i) => {
+  const seen = {};
+  (q.options || []).forEach((o) => {
+    const k = (o.x < 0) ? ((o.y < 0) ? 'sekkei' : 'suishin')
+                        : ((o.y < 0) ? 'kyomei' : 'chokkan');
+    seen[k] = (seen[k] || 0) + 1;
+  });
+  const missing = ['sekkei', 'suishin', 'kyomei', 'chokkan'].filter((k) => !seen[k]);
+  if (missing.length) {
+    wn(`q${i + 1} に ${missing.join('・')} の象限へ倒れる選択肢がありません`,
+      '各問に4象限を1つずつ置くと、型の分布が偏りません');
+    quadBad++;
+  }
+});
+if (!quadBad) { ok('10問すべてに4象限が1つずつ揃っています'); }
 
 /* ------------------------------------------------------------ スコア帯 */
 head('■ 結スコアの段階');
@@ -232,7 +251,7 @@ if (N > 20) {
   console.log('  判定の強度: ' + show(L));
   console.log('  スコア帯  : ' + show(B));
   console.log('  較正      : raw ' + CAL.rawMin + '〜' + CAL.rawMax +
-    ' / cMax ' + CAL.cMax + ' bMax ' + CAL.bMax + ' sMax ' + CAL.sMax);
+    ' / 基準max ' + CAL.kMax + ' 伝達max ' + CAL.dMax + ' 決断max ' + CAL.tMax);
 }
 
 /* -------------------------------------------- 生成物が最新かどうか */

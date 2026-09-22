@@ -109,7 +109,7 @@ C.types.forEach((t) => {
     </div>
     <p class="r-catch">${esc(t.catch)}</p>
 
-    <h2 class="sec">この型の締め方</h2>
+    <h2 class="sec">この型の進め方</h2>
     <p>${esc(t.summary)}</p>
 
     <h2 class="sec">強みが出る場所</h2>
@@ -118,19 +118,19 @@ C.types.forEach((t) => {
     <h2 class="sec">取りこぼしているもの</h2>
     <p>${esc(t.leak)}</p>
 
-    <h2 class="sec">書き換えの実例</h2>
-    <div class="ex"><p class="ex-head">BEFORE ／ やりがちな締め</p><div class="ex-body">${esc(t.badExample)}</div></div>
-    <div class="ex after"><p class="ex-head">AFTER ／ 書き換えた締め</p><div class="ex-body">${esc(t.goodExample)}</div></div>
+    <h2 class="sec">プロフィールの書き換え例</h2>
+    <div class="ex"><p class="ex-head">BEFORE ／ ありがちな書き方</p><div class="ex-body">${esc(t.badExample)}</div></div>
+    <div class="ex after"><p class="ex-head">AFTER ／ 書き換えた例</p><div class="ex-body">${esc(t.goodExample)}</div></div>
     <p style="margin-top:16px;font-size:14.5px;color:var(--ink-2)">${esc(t.exampleNote)}</p>
 
-    <h2 class="sec">相性のいい場面・避けたい場面</h2>
+    <h2 class="sec">この型が生きる場面・つまずく場面</h2>
     <p>${esc(t.affinity)}</p>
 
     <div class="cta t-cta">
       <h2>あなたは、4つのうちどれですか</h2>
       <p>このページは4タイプのうちの1つです。あなたがどれなのか、そして
-      明快さ・接続・余白のどれが薄いのかは、10問に答えると分かります。
-      薄い要素に合わせた穴埋め式の締めの型が、1本出ます。</p>
+      基準・伝達・決断のどれが薄いのかは、10問に答えると分かります。
+      薄い要素に合わせた穴埋め式の立て直しの手順が、1本出ます。</p>
       <a class="btn" href="../index.html">${esc(C.copy.startButton)}</a>
       <p class="note" style="margin-top:12px;text-align:center">${esc(C.copy.privacyLine)}</p>
     </div>
@@ -214,7 +214,7 @@ const indexHtml =
   head({
     title: `${C.copy.title} ｜ ${C.copy.subtitle}`,
     desc: C.copy.metaDescription ||
-      '起承転結の「結」＝文章の締め方を10問で診断します。4タイプ判定と、明快さ・接続・余白の3要素スコア、そのまま使える締めのテンプレートをお渡しします。',
+      '「結」は結婚の結。あなたが結婚をどう決めようとしているかの傾向を10問で診断します。4タイプ判定と、基準・伝達・決断の3要素スコアをお渡しします。',
     canonical: `${SITE}/`,
     ogImage: `${SITE}/ogp/yui-top-${OGPV}.png`,
     themeColor: '#c8453c',
@@ -227,7 +227,7 @@ const indexHtml =
   <section id="intro" aria-labelledby="intro-title">
     <div id="resume-host"></div>
     <div class="seal" aria-hidden="true" style="margin:0 0 26px">結</div>
-    <p class="kicker">Writing Diagnosis</p>
+    <p class="kicker">結婚相談所AGOEN</p>
     <h1 id="intro-title">${esc(C.copy.title)}</h1>
     <p class="sub" id="c-subtitle">${esc(C.copy.subtitle)}</p>
     <p class="hook" id="c-hook">${esc(C.copy.hook)}</p>
