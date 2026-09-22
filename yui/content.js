@@ -23,12 +23,19 @@ window.YUI_CONTENT = {
        ページ上には一切表示されません。 */
     postKeyword: "戦略",
 
-    /* DMの直リンク。Instagram なら "https://ig.me/m/あなたのID"
-       空なら、DMボタンは表示されません。 */
-    dmUrl: "",
+    /* ▼▼ 要確認 ▼▼
+       診断の窓口として、中塚さん個人名義のInstagram「@nakatsuka_unico」を暫定で設定しています。
+       （Gmailの通知から、この Gmail に紐づくアカウントとして
+         nakatsuka_unico / yy_unico / agoen_jp / fp_marche / dicek9 を確認しました。
+         このうち個人名義かつ媒体色の薄いものを選んでいます）
+       別のアカウントで受ける場合は、下の2行の ID を差し替えるだけです。
+       ▲▲ 要確認 ▲▲ */
+
+    /* DMの直リンク。Instagram なら "https://ig.me/m/あなたのID" */
+    dmUrl: "https://ig.me/m/nakatsuka_unico",
 
     /* SNSプロフィールURL。「投稿に戻る」先が特定できないときの代替です。 */
-    profileUrl: "",
+    profileUrl: "https://www.instagram.com/nakatsuka_unico/",
 
     /* LINE公式アカウントの友だち追加URL。例 "https://line.me/R/ti/p/@xxxxxxx"
        空ならLINEのCTAは一切描画しません。開設したら、ここに貼るだけで有効になります。 */

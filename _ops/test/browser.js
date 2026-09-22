@@ -94,6 +94,9 @@ const readStore = (p) =>
     check('商談CTAが出る（仕事で書く層）', (await page.locator('#dm-copy').count()) === 1);
     check('アプリ内ブラウザ向けの案内が出る', (await page.textContent('#result')).includes('左上の'));
     check('結果ハッシュが5文字', /^#\/r\/[a-z2-7]{5}$/.test(new URL(page.url()).hash));
+    const shareHref = await page.getAttribute('#sh-x', 'href');
+    check('シェア先が今のドメインを指す（移設しても壊れない）',
+      decodeURIComponent(shareHref).includes(new URL(BASE).origin));
     const body = await page.textContent('body');
     check('投稿側キーワードが露出しない', !body.includes(C.config.postKeyword));
     check('未定義値が描画されない', !/undefined|NaN|\[object/.test(body));

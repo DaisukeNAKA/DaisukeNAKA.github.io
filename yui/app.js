@@ -340,6 +340,20 @@
     return /^#[0-9a-fA-F]{3,8}$/.test(String(c)) ? String(c) : fallback;
   }
   function safeKey(k) { return String(k).replace(/[^A-Za-z0-9_-]/g, ""); }
+
+  /* シェアやタイプ別ページのリンク先は、設定値ではなく「いま開かれているURL」から組み立てます。
+     こうしておくと、置き場所を別のドメインへ移したとき、
+     設定を書き換える前からシェアのリンクが正しい先を指します。
+     （canonical と og:url は検索エンジン向けに絶対URLが必要なので、そちらは config.siteUrl を使います） */
+  function siteBase() {
+    try {
+      if (location.protocol === "http:" || location.protocol === "https:") {
+        var dir = location.pathname.replace(/[^/]*$/, "");
+        return (location.origin + dir).replace(/\/$/, "");
+      }
+    } catch (e) {}
+    return String(CFG.siteUrl || "").replace(/\/$/, "");
+  }
   function typeColor(t) {
     return safeHex(isDark() ? t.colorDark : t.color, "#c8453c");
   }
@@ -644,7 +658,7 @@
     var colorDark = safeHex(t.colorDark, colorLight);
     var iv = C.intensity[r.level];
     var host = $("result");
-    var base = String(CFG.siteUrl || "").replace(/\/$/, "");
+    var base = siteBase();
     var typeUrl = base + "/t/" + safeKey(t.key) + ".html";
     var backPost = postFromQuery();
 
