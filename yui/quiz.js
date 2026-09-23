@@ -111,6 +111,12 @@
   var answers = new Array(TOTAL_A);
   for (var _i = 0; _i < TOTAL_A; _i++) { answers[_i] = -1; }
   var idx = 0, busy = false, shown = false;
+  /* 答えたあとの画面送りのタイマー。戻る操作が先に来たら取り消します（あとから送られて、戻る操作が打ち消されないように）。 */
+  var timers = [];
+  function clearTimers() { timers.forEach(function (t) { clearTimeout(t); }); timers = []; }
+  /* 画面を出した直後の短いあいだは答えを受けません。動きを減らす設定では待ち時間が0になるので、
+     ダブルタップの2回目が、まだ読んでいない次の問に答えてしまうのを防ぎます。 */
+  function unlockSoon() { busy = true; setTimeout(function () { busy = false; }, 250); }
   /* 1日を過ぎて消した記録が、開いた結果のアドレスと同じだったとき、その結果を本人のものとして扱うための控え */
   var staleCode = null;
   var nv;
@@ -146,7 +152,7 @@
         busy = true;
         answers[0] = i;
         save();
-        setTimeout(function () { busy = false; nv.nav("#/q/1"); }, Y.reduceMotion ? 0 : 200);
+        timers.push(setTimeout(function () { busy = false; nv.nav("#/q/1"); }, Y.reduceMotion ? 0 : 200));
       });
       host.appendChild(b);
     });
@@ -154,7 +160,7 @@
     document.title = TITLE;
     try { $("g-text").focus({ preventScroll: true }); } catch (e) {}
     window.scrollTo(0, 0);
-    busy = false;
+    unlockSoon();
   }
 
   /* ========== 設問 ========== */
@@ -193,7 +199,7 @@
     document.title = TITLE;
     try { $("q-text").focus({ preventScroll: true }); } catch (e) {}
     window.scrollTo(0, 0);
-    busy = false;
+    unlockSoon();
   }
   function pick(i, node) {
     if (busy) { return; }
@@ -209,16 +215,16 @@
     /* 途中の回答は、続きから再開できるよう残します。10問すべてに答え終えたら、再開の用はないので消します
        （結果はアドレスに入っていて、開き直しは履歴の印で本人のものと分かります）。 */
     if (firstUnanswered() >= N) { Y.store.del(SKEY); } else { save(); }
-    setTimeout(function () {
+    timers.push(setTimeout(function () {
       $("q-stage").classList.add("out");
-      setTimeout(function () {
+      timers.push(setTimeout(function () {
         if (idx < N - 1) { nv.nav("#/q/" + (idx + 2)); }
         else { nv.nav("#/r/" + encodeAnswers(answers)); }
-      }, Y.reduceMotion ? 0 : 170);
-    }, Y.reduceMotion ? 0 : 130);
+      }, Y.reduceMotion ? 0 : 170));
+    }, Y.reduceMotion ? 0 : 130));
   }
   /* history.back() に頼ると、アプリ内ブラウザがページを再生成したときにサイト外へ出てしまいます。 */
-  Y.on("q-back", function () { nv.nav(idx > 0 ? ("#/q/" + idx) : "#/gate"); });
+  Y.on("q-back", function () { clearTimers(); busy = false; nv.nav(idx > 0 ? ("#/q/" + idx) : "#/gate"); });
 
   /* ========== 結果 ==========
      content.js section 14 の順序と差し替えに従います。手書き版の文言のうち「書いた字」を前提にしたもの
@@ -302,7 +308,7 @@
     Y.on("retake", restart);
     var own = $("own");
     if (own) {
-      own.addEventListener("click", function (e) { e.preventDefault(); restart(); });
+      own.addEventListener("click", function (e) { e.preventDefault(); onStart(); });
     }
     /* 保存するのは答えたとき（pick）だけです。結果を開き直したり戻ったりしただけで書き直すと、
        「もう一度受ける」で消した答えや、1日たって消した答えが、また端末に残ってしまいます。
@@ -340,8 +346,10 @@
 
   /* ========== ルーティング ========== */
   function route() {
+    clearTimers();
     var h = location.hash || "";
-    if (h === "#/gate") { renderGate(); shown = true; return; }
+    /* 属性の1問のアドレスを直接開いたとき（再読み込み・タブの復元・アドレスのコピー）は、R01・R02 のある導入から始めます。 */
+    if (h === "#/gate") { if (!shown) { nv.replaceHash("#/"); showIntro(); return; } renderGate(); shown = true; return; }
     var m = h.match(/^#\/q\/(\d+)$/);
     if (m) {
       var n = parseInt(m[1], 10);
@@ -361,7 +369,7 @@
       /* 自分の結果かどうかは、開いたコードごとに決めます。ほかの方の共有リンクを開いただけで、
          閲覧者自身の途中回答を壊さないこと。 */
       var own = isOwn(m[1]);
-      if (own) { answers = a; }
+      /* 答えをメモリへ戻さないこと。「もう一度受ける」で消した答えが、戻る→進む→属性の1問で、また端末に保存されるためです。 */
       renderResult(own ? "self" : "shared", a);
       shown = true;
       return;

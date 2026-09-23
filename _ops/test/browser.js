@@ -66,6 +66,7 @@ function resample(poly, n) {
 
 /* 枠の上に、CDP のタッチ入力で字を書きます。戻り値は書く前後の scrollY。 */
 async function write(page, shape, { stepMs = 9, pauseMs = 70, holdMs = 90, shift = [0, 0] } = {}) {
+  await page.waitForTimeout(400);   // 画面を切り替えた直後の入力止め（350ms）を待つ
   const cdp = await page.context().newCDPSession(page);
   /* 書く画面は上端から表示するので、枠が画面の外にあるときは、人と同じように枠が見えるところまで送ってから書きます。 */
   await page.evaluate(() => {
@@ -94,7 +95,7 @@ async function write(page, shape, { stepMs = 9, pauseMs = 70, holdMs = 90, shift
 
 async function writeAndFinish(page, opts = {}) {
   await page.waitForSelector('#write:not([hidden])');
-  await page.waitForTimeout(150);
+  await page.waitForTimeout(400);   // 画面を切り替えた直後の入力止め（350ms）を待つ
   const sc = await write(page, YUI_SHAPE, opts);
   await page.click('#w-done');
   return sc;
@@ -140,6 +141,12 @@ async function writeAndFinish(page, opts = {}) {
   check('書いている間に画面がスクロールしない', sc.y0 === sc.y1, `${sc.y0} → ${sc.y1}`);
   await page.waitForSelector('#gate:not([hidden])', { timeout: 5000 });
   check('書いたあとに属性の1問が出る', await page.isVisible('#gate'));
+  /* 「書けた」のダブルタップの2回目が、属性の1問に勝手に答えないこと（画面切り替え直後の入力止め） */
+  const gbox = await page.locator('#g-opts .opt >> nth=0').boundingBox();
+  await page.mouse.click(gbox.x + gbox.width / 2, gbox.y + gbox.height / 2);
+  await page.waitForTimeout(100);
+  check('切り替え直後のタップでは、属性の1問に答えない', await page.isVisible('#gate'));
+  await page.waitForTimeout(400);   // 画面切り替え直後の入力止めを待つ
   await page.click('#g-opts .opt >> nth=0');
   await page.waitForSelector('#result:not([hidden])', { timeout: 5000 });
   const name = (await page.textContent('#r-name')).trim();
@@ -193,7 +200,24 @@ async function writeAndFinish(page, opts = {}) {
 
   /* ---------------- 2回目 ---------------- */
   head('■ 2回目を書いて平均する');
+  const firstUrl = page.url();
   await page.click('#write-2');
+  await page.waitForSelector('#write:not([hidden])');
+  check('2回目の画面に「1回分で結果を見る」がある', await page.isVisible('#w-skip'));
+  await page.click('#w-skip');
+  await page.waitForSelector('#result:not([hidden])', { timeout: 5000 });
+  check('  押すと1回分の結果へ戻る', page.url() === firstUrl && (await page.locator('.shared-bar').count()) === 0);
+  await page.click('#write-2');
+  await page.waitForSelector('#write:not([hidden])');
+  await page.waitForTimeout(400);
+  await write(page, YUI_SHAPE.slice(0, 4));
+  await page.goBack();
+  await page.waitForSelector('#result:not([hidden])', { timeout: 5000 });
+  check('2回目の画面から戻ると、1回分の結果に戻る', (await page.locator('.shared-bar').count()) === 0);
+  await page.goForward();
+  await page.waitForSelector('#write:not([hidden])', { timeout: 5000 });
+  check('  進むと、書きかけの線が残っている', !(await page.isDisabled('#w-done')));
+  await page.click('#w-clear');
   await writeAndFinish(page, { holdMs: 20 });
   await page.waitForSelector('#result:not([hidden])', { timeout: 5000 });
   const name2 = (await page.textContent('#r-name')).trim();
@@ -253,17 +277,24 @@ async function writeAndFinish(page, opts = {}) {
   await page.waitForTimeout(200);
   check('「一」だけでは診断に進まない', await page.isVisible('#write'));
   check('書き直しを促す文が出る', await page.isVisible('#w-problem'));
-  await page.click('#w-undo');
-  check('一画戻すと「書けた」が押せなくなる', await page.isDisabled('#w-done'));
+  const probText = (await page.textContent('#w-problem')).trim();
+  check('案内は1つだけ（同じ「もう一度」を重ねない）', (probText.match(/もう一度、枠いっぱいに/g) || []).length === 1, probText);
+  check('はじかれた線は消えていて、そのまま書き直せる', await page.isDisabled('#w-done'));
   await write(page, YUI_SHAPE.slice(0, 3));
+  await page.click('#w-undo');
+  check('一画戻すと線が1本減る', !(await page.isDisabled('#w-done')));
   await page.click('#w-clear');
   check('全部消すと「書けた」が押せなくなる', await page.isDisabled('#w-done'));
+  const sy = await page.evaluate(() => window.scrollY);
+  check('書く画面は少し下げて開く（アプリの「引っ張って更新」対策、scrollY > 0）', sy > 0, String(sy));
+  check('  それでも R06 は画面の中', await page.evaluate(() => { const r = document.getElementById('alt-quiz').getBoundingClientRect(); return r.top >= 0 && r.bottom <= innerHeight; }));
 
   /* ---------------- 属性による出し分け ---------------- */
   head('■ 属性による出し分け');
   await write(page, YUI_SHAPE);
   await page.click('#w-done');
   await page.waitForSelector('#gate:not([hidden])');
+  await page.waitForTimeout(400);   // 画面切り替え直後の入力止めを待つ
   await page.click('#g-opts .opt >> nth=3');
   await page.waitForSelector('#result:not([hidden])');
   check('活動していない層に無料相談CTAを出さない', (await page.locator('#dm-copy').count()) === 0);
@@ -282,6 +313,7 @@ async function writeAndFinish(page, opts = {}) {
   await lp.goto(BASE + '?s=zz', { waitUntil: 'networkidle' });
   await lp.click('#start');
   await lp.waitForSelector('#write:not([hidden])');
+  await lp.waitForTimeout(400);
   const lcdp = await lctx.newCDPSession(lp);
   const lbox = await lp.locator('#cv').boundingBox();
   for (let k = 0; k < 2; k++) {
@@ -305,6 +337,7 @@ async function writeAndFinish(page, opts = {}) {
   await page.click('#start');
   await writeAndFinish(page);
   await page.waitForSelector('#gate:not([hidden])');
+  await page.waitForTimeout(400);   // 画面切り替え直後の入力止めを待つ
   await page.click('#g-opts .opt >> nth=0');
   await page.waitForSelector('#result:not([hidden])');
   const h1 = await page.evaluate(() => history.length);
@@ -321,9 +354,11 @@ async function writeAndFinish(page, opts = {}) {
   await qp.goto(BASE + 'q.html', { waitUntil: 'networkidle' });
   await qp.click('#start');
   await qp.waitForSelector('#gate:not([hidden])');
+  await qp.waitForTimeout(400);   // 画面切り替え直後の入力止めを待つ
   await qp.click('#g-opts .opt >> nth=0');
   for (let i = 0; i < C.quiz.questions.length; i++) {
     await qp.waitForSelector('#q-opts .opt');
+    await qp.waitForTimeout(400);   // 画面切り替え直後の入力止めを待つ
     await qp.click('#q-opts .opt >> nth=' + (i % 4));
     await qp.waitForTimeout(330);
   }
@@ -353,6 +388,9 @@ async function writeAndFinish(page, opts = {}) {
   await qp2.click('#own');
   await qp2.waitForSelector('#gate:not([hidden])', { timeout: 5000 });
   check('  帯の R06 から10問を始められる', await qp2.isVisible('#gate'));
+  await qp2.goto('about:blank');
+  await qp2.goto(BASE + 'q.html#/gate', { waitUntil: 'networkidle' });
+  check('10問版の属性の1問のアドレスを直接開くと、導入（R01・R02）から始まる', await qp2.isVisible('#intro'));
   await qctx.close();
 
   /* ---------------- 静的ページ ---------------- */

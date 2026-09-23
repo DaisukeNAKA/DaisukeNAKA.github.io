@@ -258,7 +258,7 @@ footer a{color:var(--ink-3);}
  * ========================================================================= */
 /* ページ全体の引っ張って更新・跳ね返りを抑えます（書いている途中に画面が動かないように）。
    ピンチでの拡大は残します。 */
-html{overscroll-behavior-y:contain;}
+html{overscroll-behavior:contain;}
 .r01{font-size:1rem;color:var(--ink);margin:-6px 0 14px;}
 .disclaimer{font-size:.84rem;color:var(--ink-2);line-height:1.9;margin:-12px 0 26px;padding:12px 14px;border-radius:10px;background:var(--surface-2);border:1px solid var(--line-soft);}
 .alt-path{font-size:.84rem;margin:0 0 18px;line-height:1.8;}
@@ -350,6 +350,12 @@ html{overscroll-behavior-y:contain;}
   #intro .kicker{margin:0 0 8px;}
   #intro h1{margin:0 0 10px;}
 }
+@media (max-height: 600px){
+  #intro{padding-top:12px;}
+  #intro .kicker{display:none;}
+}
+/* 書く画面は、R06 が画面の一番上に来るところまで少し送って表示します（hw.js の showWrite）。その余白 */
+#write{padding-top:12px;}
 /* タイプ別ページも、catch の直後の打消し（typePageNote）が小さい画面で折り目の下へ出ないように */
 @media (max-height: 700px){
   .t-hero{padding-top:24px;}

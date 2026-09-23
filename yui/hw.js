@@ -57,6 +57,14 @@
 
   function screen(which) {
     ["intro", "write", "gate", "result"].forEach(function (id) { var n = $(id); if (n) { n.hidden = (id !== which); } });
+    /* 画面を切り替えた直後の短いあいだは、次の画面への入力を受けません。ダブルタップの2回目が、
+       新しい画面の同じ位置（属性の答え・10問版へのリンク・枠）に落ちるのを防ぐためです。 */
+    S.readyAt = now() + 350;
+  }
+  function now() { return (window.performance && performance.now) ? performance.now() : Date.now(); }
+  function tooSoon(e) {
+    if (now() < (S.readyAt || 0)) { if (e && e.preventDefault) { e.preventDefault(); } return true; }
+    return false;
   }
 
   /* ========== 書く画面 ========== */
@@ -70,7 +78,7 @@
     if (!cv || !pad) { return; }
     var r = pad.getBoundingClientRect();
     /* 実際の枠の幅に合わせます（下限で広げると、拡大表示のときに枠からはみ出します）。 */
-    var s = Math.max(40, Math.round(r.width));
+    var s = Math.max(40, Math.round(pad.clientWidth || r.width));
     var dpr = window.devicePixelRatio || 1;
     side = s;
     cv.width = Math.round(s * dpr);
@@ -121,6 +129,7 @@
   if (cv) {
     cv.addEventListener("pointerdown", function (e) {
       if (e.pointerType === "mouse" && e.button !== 0) { return; }
+      if (tooSoon(e)) { return; }
       /* 2本目の指は無視します。1本目の線だけを書いた線として扱います。 */
       if (active) { e.preventDefault(); return; }
       problem("");
@@ -151,6 +160,8 @@
       active = null;
       S.cancels++;
       problem(WR.problems && WR.problems.cancelled);
+      /* 案内の欄が画面の外にあることがあるので、画面の下に出る短いお知らせでも伝えます。 */
+      Y.toast(WR.problems && WR.problems.cancelled);
       if (S.cancels >= 2) { showInappHint(); }
       redraw();
     });
@@ -163,6 +174,17 @@
   }
 
   Y.on("w-undo", function () { S.strokes.pop(); problem(""); redraw(); });
+  /* 2回目の画面から、書かずに1回分の結果へ戻る（write.secondSkip） */
+  Y.on("w-skip", function () {
+    if (!S.current) { return; }
+    S.strokes = [];
+    S.pass = 0;
+    nv.nav("#/r/" + (S.current.code || "self"));
+  });
+  (function () {
+    var a = $("alt-quiz");
+    if (a) { a.addEventListener("click", function (e) { if (tooSoon(e)) { e.stopPropagation(); } }, true); }
+  })();
   Y.on("w-clear", function () { S.strokes = []; problem(""); redraw(); });
   Y.on("w-done", function () {
     var a = analyzeCurrent();
@@ -170,10 +192,12 @@
       var P = WR.problems || {};
       var codes = a && a.problems && a.problems.length ? a.problems : ["noMatch"];
       /* 知らない理由コードでも、同じ「もう一度」の案内を出します（エンジンの約束）。 */
-      var msgs = codes.map(function (c) { return P[c] || P.noMatch || P.tooFewStrokes; }).filter(Boolean);
-      var uniq = [];
-      msgs.forEach(function (m) { if (uniq.indexOf(m) < 0) { uniq.push(m); } });
-      problem(uniq.slice(0, 2).join(" "));
+      /* 案内は1つだけ出し（どれも「もう一度、枠いっぱいに」で終わるため）、書いた線は消して書き直してもらいます。
+         線を残したまま上から書くと、字とは別の線として、もう一度はじかれるためです。 */
+      var c0 = codes.indexOf("extraInk") >= 0 ? "extraInk" : codes[0];
+      problem(P[c0] || P.noMatch || P.tooFewStrokes);
+      S.strokes = [];
+      redraw();
       return;
     }
     if (S.pass === 2) { S.a2 = a; S.s2 = S.strokes.slice(); }
@@ -194,17 +218,24 @@
   }
 
   function showWrite(pass) {
+    /* 戻る・進むで同じ画面に戻ってきたときは、書きかけの線を残します。 */
+    if (S.pass !== pass) { S.strokes = []; }
     S.pass = pass;
-    S.strokes = [];
     active = null;
+    if ($("w-skip")) { $("w-skip").hidden = !(pass === 2 && S.current); }
     Y.setText("w-heading", pass === 2 ? (WR.secondHeading || WR.heading) : WR.heading);
     problem("");
     screen("write");
     window.scrollTo(0, 0);
     resize();
-    /* 画面は上端から見せます。枠を中央へ送ると、枠の直上に置いた R06（書かずに診断）と R03・R04 が
-       画面の外へ押し出されるためです。「引っ張って更新」は、枠の touch-action:none と touchstart の
-       preventDefault、body の overscroll-behavior で止めています。 */
+    /* 書き始める前に、少しだけ下へ送ります（scrollY > 0）。アプリ側の「引っ張って更新」や「下へスワイプで閉じる」は
+       アプリが画面の最上部かどうかで判定していて、ページの touch-action や preventDefault では止められないためです。
+       送る量は、R06（書かずに診断）が画面の一番上に来るところまでにします。枠の直上の R03・R04 も見えたままです。 */
+    try {
+      var alt = $("alt-quiz");
+      var y = alt ? alt.getBoundingClientRect().top + (window.pageYOffset || 0) - 8 : 1;
+      window.scrollTo(0, Math.max(1, Math.round(y)));
+    } catch (e) {}
     try { $("w-heading").focus({ preventScroll: true }); } catch (e) {}
   }
 
@@ -212,7 +243,9 @@
     /* Pointer Events が無い古い環境では、書いた線を正しく測れないため10問版へ案内します。 */
     if ($("w-nopointer")) { $("w-nopointer").hidden = false; }
     /* 書けない画面で「書き順は自由」「何度でも書き直せます」や押せないボタンを並べないよう、書くための部品はまとめて隠します。 */
-    ["pad-wrap", "w-r04", "w-size", "w-r05", "w-btns", "w-done"].forEach(function (id) { if ($(id)) { $(id).hidden = true; } });
+    ["pad-wrap", "w-r04", "w-size", "w-r05", "w-btns", "w-done", "w-heading"].forEach(function (id) { if ($(id)) { $(id).hidden = true; } });
+    var wk = document.querySelector("#write .kicker");
+    if (wk) { wk.hidden = true; }
   }
 
   /* ========== 属性設問（書いたあとに1問だけ。型には影響しません） ========== */
@@ -227,7 +260,7 @@
       b.className = "opt";
       b.textContent = opt.label;
       b.setAttribute("data-mark", String(i + 1));
-      b.addEventListener("click", function () { S.qualify = i; showOwnResult(); });
+      b.addEventListener("click", function (e) { if (tooSoon(e)) { return; } S.qualify = i; showOwnResult(); });
       host.appendChild(b);
     });
     screen("gate");
@@ -314,6 +347,8 @@
         break;
       case "f5":
         var sc = stopCounts(ctx.marks);
+        /* 2回平均のとき、2回目の字でとめを測れなかったら、1回目の字の印で数えます（値は採点に使っているので「測れなかった」とは書かない）。 */
+        if (!sc.total && ctx.twoPass && S.a1) { sc = stopCounts(S.a1.marks); }
         if (!sc.total) { return rowNone(fk); }
         tk.stops = String(sc.stops); tk.total = String(sc.total);
         tk.ms = String(Math.round(v)); tk.medMs = String(Math.round(med));
@@ -529,7 +564,7 @@
           refRows.map(function (r) { return rowHtml(r, RS.refLabel); }).join("") + "</ul></details>" : "");
     } else {
       panel += '<p class="note">' + esc(shared ? RS.sharedPanelNote : RS.reloadPanelNote) + "</p>" +
-        (rows.length && calNote ? '<p class="note cal-note">' + esc(calNote) + "</p>" : "") +
+        ((rows.length || hlText) && calNote ? '<p class="note cal-note">' + esc(calNote) + "</p>" : "") +
         (rows.length ? '<ul class="m-list">' + rows.map(function (r) { return rowHtml(r, ""); }).join("") + "</ul>" : "");
     }
     panel += "</div>";
@@ -608,9 +643,12 @@
     }
     Y.on("retake", restart);
     Y.on("own", function () { location.hash = ""; restart(); });
-    Y.on("write-2", function () { nv.nav("#/write2"); });
+    Y.on("write-2", function () { nv.go("#/write2"); });
     Y.on("forget", function () {
       Y.store.del(LKEY);
+      /* 消した前回の型を、このあと2回目を書いたときの比較にも使わないように。 */
+      S.sessionPrev = null;
+      if (S.current) { S.current.prevKey = null; }
       Y.toast(RS.forgetDone);
       var b = $("forget");
       if (b && b.parentNode) { b.parentNode.removeChild(b); }
@@ -624,6 +662,7 @@
     var box = $("w-inapp");
     if (!box) { return; }
     box.hidden = false;
+    Y.toast(WR.inappHint);
     var wrap = $("w-line-ext-wrap"), a = $("w-line-ext");
     if (!wrap || !a || !Y.caps || Y.caps.inapp !== "line") { return; }
     var q = (location.search || "").replace(/^\?/, "").split("&").filter(function (kv) {
@@ -743,7 +782,13 @@
   }
   window.addEventListener("hashchange", route);
 
-  function onStart() { S.strokes = []; nv.go("#/write"); }
+  function onStart() {
+    /* 指で書く入力が使えない環境では、書く画面を出さずに10問版へ案内します（write.noPointer の方針）。 */
+    if (!Y.caps.pointer) { location.href = "q.html"; return; }
+    S.strokes = [];
+    S.pass = 0;
+    nv.go("#/write");
+  }
   Y.on("start", onStart);
   Y.on("start2", onStart);
   Y.on("g-back", function () { nv.nav("#/write"); });

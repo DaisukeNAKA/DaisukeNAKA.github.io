@@ -165,16 +165,17 @@ const indexHtml =
     </div>
     <p class="note" id="w-r05" style="margin-top:10px">${esc(W.r05)}</p>
     <div class="w-problem" id="w-problem" role="status" aria-live="polite"></div>
+    <div id="w-inapp" role="status" hidden>
+      <p class="note">${esc(W.inappHint)}</p>
+      <!-- LINE の中で開いているときだけ、外部ブラウザで開き直すリンクを出します（hw.js が href を入れます） -->
+      <p class="alt-path" id="w-line-ext-wrap" hidden><a id="w-line-ext" href="index.html">${esc(W.lineExternal)}</a></p>
+    </div>
     <div class="w-btns" id="w-btns">
       <button class="btn btn-ghost" id="w-undo" type="button" disabled>${esc(W.undo)}</button>
       <button class="btn btn-ghost" id="w-clear" type="button" disabled>${esc(W.clear)}</button>
     </div>
     <button class="btn" id="w-done" type="button" disabled>${esc(W.done)}</button>
-    <div id="w-inapp" hidden>
-      <p class="note">${esc(W.inappHint)}</p>
-      <!-- LINE の中で開いているときだけ、外部ブラウザで開き直すリンクを出します（hw.js が href を入れます） -->
-      <p class="alt-path" id="w-line-ext-wrap" hidden><a id="w-line-ext" href="index.html">${esc(W.lineExternal)}</a></p>
-    </div>
+    <button class="btn btn-ghost" id="w-skip" type="button" hidden style="margin-top:10px">${esc(W.secondSkip)}</button>
   </section>
 
   <!-- ========== 属性（書いたあとに1問。結果には影響しません） ========== -->

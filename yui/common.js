@@ -118,15 +118,28 @@
     close.className = "btn btn-ghost";
     close.type = "button";
     close.textContent = "閉じる";
-    function onKey(e) { if (e.key === "Escape") { shut(); } }
+    /* aria-modal に合わせて、Tab はダイアログの中だけを回し、閉じたら開いたボタンへ戻します。
+       開いた直後の背景のタップ（ダブルタップの2回目）では閉じません。 */
+    var opener = document.activeElement;
+    var openedAt = Date.now();
+    function onKey(e) {
+      if (e.key === "Escape") { shut(); return; }
+      if (e.key === "Tab") {
+        var first = ta, last = close;
+        if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+        else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+        else if (document.activeElement !== first && document.activeElement !== last) { e.preventDefault(); first.focus(); }
+      }
+    }
     function shut() {
       document.removeEventListener("keydown", onKey);
       if (back.parentNode) { back.parentNode.removeChild(back); }
       if (box.parentNode) { box.parentNode.removeChild(box); }
+      try { if (opener && opener.focus) { opener.focus(); } } catch (e) {}
     }
     document.addEventListener("keydown", onKey);
     close.addEventListener("click", shut);
-    back.addEventListener("click", shut);
+    back.addEventListener("click", function () { if (Date.now() - openedAt > 400) { shut(); } });
     box.appendChild(p); box.appendChild(ta); box.appendChild(close);
     document.body.appendChild(back); document.body.appendChild(box);
     try { ta.focus(); ta.setSelectionRange(0, text.length); } catch (e) {}
@@ -371,7 +384,7 @@
       html.biz =
         '<div class="cta">' +
           "<h2>" + esc(CT.softHeading) + "</h2>" +
-          "<p>" + esc(CT.softBody) + "</p>" +
+          "<p>" + esc(opts.noComment && CT.softBodyShared ? CT.softBodyShared : CT.softBody) + "</p>" +
           '<nav class="soft-links" id="soft-go" aria-label="' + esc(CT.softButton) + '">' +
             others.map(function (o) {
               return '<a class="btn btn-ghost" href="t/' + safeKey(o.key) + '.html">' + esc(o.name) + "</a>";

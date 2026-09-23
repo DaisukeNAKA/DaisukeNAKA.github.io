@@ -89,16 +89,17 @@
     </div>
     <p class="note" id="w-r05" style="margin-top:10px">時間制限はありません。何度でも書き直せます。書き直した回数は結果に使いません。</p>
     <div class="w-problem" id="w-problem" role="status" aria-live="polite"></div>
+    <div id="w-inapp" role="status" hidden>
+      <p class="note">線が何度も途切れるときは、SNSアプリの中ではなく、Safari や Chrome で開くと書きやすくなります。アプリのメニューから「ブラウザで開く」を選んでください。</p>
+      <!-- LINE の中で開いているときだけ、外部ブラウザで開き直すリンクを出します（hw.js が href を入れます） -->
+      <p class="alt-path" id="w-line-ext-wrap" hidden><a id="w-line-ext" href="index.html">外部ブラウザで開き直す（LINEで開いている方）</a></p>
+    </div>
     <div class="w-btns" id="w-btns">
       <button class="btn btn-ghost" id="w-undo" type="button" disabled>一画戻す</button>
       <button class="btn btn-ghost" id="w-clear" type="button" disabled>全部消す</button>
     </div>
     <button class="btn" id="w-done" type="button" disabled>書けた</button>
-    <div id="w-inapp" hidden>
-      <p class="note">線が何度も途切れるときは、SNSアプリの中ではなく、Safari や Chrome で開くと書きやすくなります。アプリのメニューから「ブラウザで開く」を選んでください。</p>
-      <!-- LINE の中で開いているときだけ、外部ブラウザで開き直すリンクを出します（hw.js が href を入れます） -->
-      <p class="alt-path" id="w-line-ext-wrap" hidden><a id="w-line-ext" href="index.html">外部ブラウザで開き直す（LINEで開いている方）</a></p>
-    </div>
+    <button class="btn btn-ghost" id="w-skip" type="button" hidden style="margin-top:10px">1回分で結果を見る</button>
   </section>
 
   <!-- ========== 属性（書いたあとに1問。結果には影響しません） ========== -->
