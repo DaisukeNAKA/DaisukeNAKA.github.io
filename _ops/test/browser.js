@@ -4,11 +4,11 @@
  *   npx http-server -p 8899 -s .          # 別のターミナルで
  *   NODE_PATH=/opt/node22/lib/node_modules node _ops/test/browser.js
  *
- * check.js が「データとして正しいか」を見るのに対して、
- * こちらは「画面として動くか」を見ます。過去に実際に出たバグの回帰も含みます。
+ * 手書きの診断（index.html）は、CDP のタッチ入力で実際に「結」を書いて確かめます。
+ * iOS の実機の挙動（戻るジェスチャー、pointercancel、筆圧の値など）はここでは確認できません。
+ * 公開前に実機で確かめる項目は _ops/playbook/50 にあります。
  *
- * 環境変数
- *   YUI_BASE  対象URL（既定 http://127.0.0.1:8899/yui/）
+ * 環境変数  YUI_BASE  対象URL（既定 http://127.0.0.1:8899/yui/）
  */
 'use strict';
 
@@ -16,13 +16,13 @@ const path = require('path');
 const { chromium } = require('playwright');
 
 const BASE = process.env.YUI_BASE || 'http://127.0.0.1:8899/yui/';
+const ORIGIN = new URL(BASE).origin;
 const ROOT = path.resolve(__dirname, '..', '..');
 
 global.window = {};
 require(path.join(ROOT, 'yui', 'content.js'));
 const C = global.window.YUI_CONTENT;
-const Q = C.questions;
-const NAMES = { sekkei: '設計型', kyomei: '共鳴型', suishin: '推進型', chokkan: '直感型' };
+const NAMES = C.types.map((t) => t.name);
 
 let fail = 0;
 const ok = (m) => console.log('  ok   ' + m);
@@ -30,190 +30,237 @@ const ng = (m, d) => { console.log('  NG   ' + m + (d ? ' :: ' + d : '')); fail+
 const check = (m, cond, d) => (cond ? ok(m) : ng(m, d));
 const head = (m) => console.log('\n' + m);
 
-/* 目的の象限へ最も強く倒れる選択肢を各問で選ぶ */
-function pickFor(target) {
-  return Q.map((q) => {
-    let best = 0, bestScore = -99;
-    q.options.forEach((o, i) => {
-      const k = (o.x < 0) ? ((o.y < 0) ? 'sekkei' : 'suishin')
-                          : ((o.y < 0) ? 'kyomei' : 'chokkan');
-      if (k === target) {
-        const s = Math.abs(o.x) + Math.abs(o.y);
-        if (s > bestScore) { bestScore = s; best = i; }
-      }
-    });
-    return best;
-  });
+/* ---------- 「結」の字形（枠の一辺=1。テスト専用の手作り折れ線） ---------- */
+const YUI_SHAPE = [
+  [[0.30, 0.12], [0.22, 0.28], [0.30, 0.33]],
+  [[0.34, 0.22], [0.18, 0.46], [0.36, 0.43]],
+  [[0.33, 0.36], [0.37, 0.46]],
+  [[0.27, 0.45], [0.27, 0.88]],
+  [[0.20, 0.60], [0.16, 0.72]],
+  [[0.31, 0.66], [0.37, 0.72]],
+  [[0.48, 0.24], [0.86, 0.24]],
+  [[0.67, 0.12], [0.67, 0.42]],
+  [[0.54, 0.40], [0.80, 0.40]],
+  [[0.53, 0.54], [0.53, 0.84]],
+  [[0.53, 0.54], [0.81, 0.54], [0.81, 0.84]],
+  [[0.53, 0.84], [0.81, 0.84]],
+];
+const ICHI = [[[0.15, 0.5], [0.85, 0.5]]];
+
+function resample(poly, n) {
+  const segs = [];
+  let L = 0;
+  for (let i = 1; i < poly.length; i++) {
+    const d = Math.hypot(poly[i][0] - poly[i - 1][0], poly[i][1] - poly[i - 1][1]);
+    segs.push(d); L += d;
+  }
+  const out = [];
+  for (let k = 0; k < n; k++) {
+    let s = (L * k) / (n - 1), i = 0;
+    while (i < segs.length - 1 && s > segs[i]) { s -= segs[i]; i++; }
+    const r = segs[i] ? Math.min(1, s / segs[i]) : 0;
+    out.push([poly[i][0] + (poly[i + 1][0] - poly[i][0]) * r, poly[i][1] + (poly[i + 1][1] - poly[i][1]) * r]);
+  }
+  return out;
 }
 
-async function answer(page, { qualify = 0, picks = null, count = Q.length } = {}) {
-  await page.click('#start');
-  await page.waitForSelector('#gate:not([hidden])');
-  await page.click(`#g-opts .opt >> nth=${qualify}`);
-  await page.waitForSelector('#quiz:not([hidden])');
-  for (let i = 0; i < count; i++) {
-    await page.waitForSelector('#q-opts .opt');
-    await page.click(`#q-opts .opt >> nth=${picks ? picks[i] : 0}`);
-    await page.waitForTimeout(330);
+/* 枠の上に、CDP のタッチ入力で字を書きます。戻り値は書く前後の scrollY。 */
+async function write(page, shape, { stepMs = 9, pauseMs = 70, holdMs = 90, shift = [0, 0] } = {}) {
+  const cdp = await page.context().newCDPSession(page);
+  const box = await page.locator('#cv').boundingBox();
+  const y0 = await page.evaluate(() => window.scrollY);
+  for (const poly of shape) {
+    const pts = resample(poly, 14).map(([x, y]) => ({
+      x: box.x + (x + shift[0]) * box.width, y: box.y + (y + shift[1]) * box.height,
+    }));
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [pts[0]] });
+    for (let i = 1; i < pts.length; i++) {
+      await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [pts[i]] });
+      await page.waitForTimeout(stepMs);
+    }
+    await page.waitForTimeout(holdMs);   // 止めてから離す（とめ）
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+    await page.waitForTimeout(pauseMs);
   }
+  const y1 = await page.evaluate(() => window.scrollY);
+  await cdp.detach();
+  return { y0, y1 };
 }
-const readStore = (p) =>
-  p.evaluate(() => { try { return localStorage.getItem('yui.v1.progress'); } catch (e) { return null; } });
+
+async function writeAndFinish(page, opts = {}) {
+  await page.waitForSelector('#write:not([hidden])');
+  await page.waitForTimeout(150);
+  const sc = await write(page, YUI_SHAPE, opts);
+  await page.click('#w-done');
+  return sc;
+}
 
 (async () => {
   const browser = await chromium.launch();
   const errors = [];
-
-  /* ---------------- 4タイプの判定 ---------------- */
-  const ctx = await browser.newContext({
-    viewport: { width: 390, height: 844 },
-    deviceScaleFactor: 2,
-    isMobile: true,
-    hasTouch: true,
-    userAgent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 ' +
-      '(KHTML, like Gecko) Mobile/15E148 Instagram 300.0',
+  const external = [];
+  const mkCtx = () => browser.newContext({
+    viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true,
+    userAgent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148 Instagram 350.0',
   });
+  const watch = (p) => {
+    p.on('pageerror', (e) => errors.push('pageerror: ' + e.message));
+    p.on('console', (m) => { if (m.type() === 'error') { errors.push('console: ' + m.text()); } });
+    p.on('request', (r) => { if (!r.url().startsWith(ORIGIN) && !r.url().startsWith('data:') && !r.url().startsWith('blob:')) { external.push(r.url()); } });
+  };
+
+  const ctx = await mkCtx();
   const page = await ctx.newPage();
-  page.on('pageerror', (e) => errors.push('pageerror: ' + e.message));
-  page.on('console', (m) => { if (m.type() === 'error') { errors.push('console: ' + m.text()); } });
+  watch(page);
 
-  for (const target of Object.keys(NAMES)) {
-    head(`■ ${NAMES[target]} の判定`);
-    await page.goto('about:blank');
-    await page.goto(BASE, { waitUntil: 'networkidle' });
-    await page.evaluate(() => { try { localStorage.clear(); } catch (e) {} });
-    await page.goto(BASE, { waitUntil: 'networkidle' });
-    await answer(page, { picks: pickFor(target) });
-    await page.waitForSelector('#result:not([hidden])', { timeout: 8000 });
+  /* ---------------- 導入 ---------------- */
+  head('■ 手書き版の導入');
+  await page.goto(BASE, { waitUntil: 'networkidle' });
+  const csp = await page.getAttribute('meta[http-equiv="Content-Security-Policy"]', 'content');
+  check('CSP で外部への通信を止めている', !!csp && /connect-src 'none'/.test(csp), csp);
+  const introText = await page.textContent('#intro');
+  check('運営者の明示（R01）が見出しの直下にある', introText.includes(C.hw.intro.r01));
+  check('遊びの診断である旨（R02）がある', introText.includes(C.hw.intro.r02));
+  check('送信しない旨（R03）がある', introText.includes(C.hw.intro.r03));
+  check('書かずに受ける経路（R06）がある', (await page.getAttribute('#alt-quiz-intro', 'href')) === 'q.html');
 
-    check('判定が ' + NAMES[target], (await page.textContent('#r-name')).trim() === NAMES[target]);
-    check('結スコアが数値', /^\d+$/.test((await page.textContent('.score-num')).trim()));
-    check('2軸マップが描画される', await page.isVisible('.map'));
-    check('処方箋が出る', await page.isVisible('.rx'));
-    check('コメントCTAが出る', (await page.locator('#cp-type').count()) === 1);
-    check('無料相談CTAが出る（活動中の層）', (await page.locator('#dm-copy').count()) === 1);
-    check('アプリ内ブラウザ向けの案内が出る', (await page.textContent('#result')).includes('左上の'));
-    check('結果ハッシュが5文字', /^#\/r\/[a-z2-7]{5}$/.test(new URL(page.url()).hash));
-    const shareHref = await page.getAttribute('#sh-x', 'href');
-    check('シェア先が今のドメインを指す（移設しても壊れない）',
-      decodeURIComponent(shareHref).includes(new URL(BASE).origin));
-    const body = await page.textContent('body');
-    check('投稿側キーワードが露出しない', !body.includes(C.config.postKeyword));
-    check('未定義値が描画されない', !/undefined|NaN|\[object/.test(body));
+  /* ---------------- 書く → 属性 → 結果 ---------------- */
+  head('■ 「結」を書いて結果まで');
+  await page.click('#start');
+  await page.waitForSelector('#write:not([hidden])');
+  check('書かずに受ける経路が枠より前にある',
+    await page.evaluate(() => !!(document.getElementById('alt-quiz').compareDocumentPosition(document.getElementById('cv')) & Node.DOCUMENT_POSITION_FOLLOWING)));
+  check('書く前は「書けた」が押せない', await page.isDisabled('#w-done'));
+  const sc = await writeAndFinish(page);
+  check('書いている間に画面がスクロールしない', sc.y0 === sc.y1, `${sc.y0} → ${sc.y1}`);
+  await page.waitForSelector('#gate:not([hidden])', { timeout: 5000 });
+  check('書いたあとに属性の1問が出る', await page.isVisible('#gate'));
+  await page.click('#g-opts .opt >> nth=0');
+  await page.waitForSelector('#result:not([hidden])', { timeout: 5000 });
+  const name = (await page.textContent('#r-name')).trim();
+  check('4タイプのどれかが出る', NAMES.some((n) => name.includes(n)), name);
+  const resText = await page.textContent('#result');
+  check('型名の直下に R07 がある（畳まない）', await page.isVisible('.r07'));
+  check('R08 がある', resText.includes(C.hw.result.r08));
+  check('自分の字が描き直される', (await page.locator('.yui-ink path.ink').count()) >= 8);
+  check('測定値が並ぶ', (await page.locator('.m-list .m-row').count()) >= 4);
+  check('2軸マップが出る', await page.isVisible('.map'));
+  check('筆圧などを使っていない旨がある', resText.includes(C.hw.result.notUsed));
+  check('コメントCTAが出る', (await page.locator('#cp-type').count()) === 1);
+  check('無料相談CTAが出る（活動中の層）', (await page.locator('#dm-copy').count()) === 1);
+  check('LINEのCTAが設定どおりに出る', (await page.locator('#line-go').count()) === (C.config.lineUrl ? 1 : 0));
+  check('2回目を書く案内が出る', (await page.locator('#write-2').count()) === 1);
+  check('差し込み語が残っていない', !/\{[a-zA-Z0-9_]+\}/.test(resText), (resText.match(/\{[a-zA-Z0-9_]+\}/) || [''])[0]);
+  check('未定義値が描画されない', !/undefined|NaN|\[object/.test(resText));
+  check('点数を出していない', !/スコア|点／|\/ 100/.test(resText));
+  check('「低い」と判定していない', !/低い|低め/.test(resText));
+  const selfUrl = page.url();
+
+  /* ---------------- 画像の保存 ---------------- */
+  head('■ 画像（押したときだけ端末の中で作る）');
+  check('押す前は画像が無い', (await page.locator('.save-img-out').count()) === 0);
+  await page.click('#save-img');
+  await page.waitForTimeout(200);
+  const src = await page.getAttribute('.save-img-out', 'src');
+  check('押すと画像ができる（data URL）', !!src && src.startsWith('data:image/png'));
+
+  /* ---------------- 2回目 ---------------- */
+  head('■ 2回目を書いて平均する');
+  await page.click('#write-2');
+  await writeAndFinish(page, { holdMs: 20 });
+  await page.waitForSelector('#result:not([hidden])', { timeout: 5000 });
+  const name2 = (await page.textContent('#r-name')).trim();
+  check('2回目のあとも結果が出る', NAMES.some((n) => name2.includes(n)), name2);
+  check('2回目のあとは案内が消える', (await page.locator('#write-2').count()) === 0);
+
+  /* ---------------- 再読み込み・共有 ---------------- */
+  head('■ 再読み込みと共有リンク');
+  await page.reload({ waitUntil: 'networkidle' });
+  await page.waitForSelector('#result:not([hidden])', { timeout: 5000 });
+  const reText = await page.textContent('#result');
+  check('再読み込みしても結果が出る', NAMES.some((n) => reText.includes(n)));
+  check('自分の結果に共有バナーは出ない', (await page.locator('.shared-bar').count()) === 0);
+  check('線は保存していないので、描き直しは出ない', (await page.locator('.yui-ink path.ink').count()) === 0);
+  const ctx2 = await mkCtx();
+  const p2 = await ctx2.newPage();
+  watch(p2);
+  await p2.goto(page.url(), { waitUntil: 'networkidle' });
+  await p2.waitForSelector('#result:not([hidden])', { timeout: 5000 });
+  check('他の人が開くと共有バナーが出る', (await p2.locator('.shared-bar').count()) === 1);
+  check('共有では無料相談を押しつけない', (await p2.locator('#dm-copy').count()) === 0);
+  for (const bad of ['#/r/zzz', '#/r/' + 'a'.repeat(64), '#/r/../../x', '#/write2', '#/gate']) {
+    await p2.goto('about:blank');
+    await p2.goto(BASE + bad, { waitUntil: 'networkidle' });
+    const safe = (await p2.isVisible('#intro')) || (await p2.isVisible('#write'));
+    check(`不正・先回りのURL（${bad.slice(0, 16)}）で壊れない`, safe);
   }
+  await ctx2.close();
+
+  /* ---------------- 書き直し・妥当性 ---------------- */
+  head('■ 書き直しと、字として読めないとき');
+  await page.goto(BASE + '#/write', { waitUntil: 'networkidle' });
+  await page.goto('about:blank');
+  await page.goto(BASE, { waitUntil: 'networkidle' });
+  await page.click('#start');
+  await page.waitForSelector('#write:not([hidden])');
+  await write(page, ICHI);
+  await page.click('#w-done');
+  await page.waitForTimeout(200);
+  check('「一」だけでは診断に進まない', await page.isVisible('#write'));
+  check('書き直しを促す文が出る', await page.isVisible('#w-problem'));
+  await page.click('#w-undo');
+  check('一画戻すと「書けた」が押せなくなる', await page.isDisabled('#w-done'));
+  await write(page, YUI_SHAPE.slice(0, 3));
+  await page.click('#w-clear');
+  check('全部消すと「書けた」が押せなくなる', await page.isDisabled('#w-done'));
 
   /* ---------------- 属性による出し分け ---------------- */
   head('■ 属性による出し分け');
-  await page.evaluate(() => { try { localStorage.clear(); } catch (e) {} });
-  await page.goto(BASE, { waitUntil: 'networkidle' });
-  await answer(page, { qualify: 3, picks: pickFor('suishin') });   // いまは活動していない
+  await write(page, YUI_SHAPE);
+  await page.click('#w-done');
+  await page.waitForSelector('#gate:not([hidden])');
+  await page.click('#g-opts .opt >> nth=3');
   await page.waitForSelector('#result:not([hidden])');
   check('活動していない層に無料相談CTAを出さない', (await page.locator('#dm-copy').count()) === 0);
   check('コメントCTAは出す', (await page.locator('#cp-type').count()) === 1);
-  const sharedUrl = page.url();
 
-  /* ---------------- 共有リンク ---------------- */
-  head('■ 共有リンク');
-  await page.evaluate(() => { try { localStorage.clear(); } catch (e) {} });
-  await page.goto('about:blank');
-  await page.goto(BASE, { waitUntil: 'networkidle' });
-  await answer(page, { qualify: 2, picks: pickFor('kyomei'), count: 3 });   // 3問で中断
-  const before = await readStore(page);
-  check('途中回答が保存される', !!before && JSON.parse(before).a.indexOf(-1) > 0);
-  await page.goto('about:blank');
-  await page.goto(sharedUrl, { waitUntil: 'networkidle' });
-  check('共有バナーが出る', (await page.textContent('#result')).includes('共有された診断結果'));
-  check('閲覧者の途中回答を壊さない', (await readStore(page)) === before);
-
-  /* ---------------- 自分の結果のリロード ---------------- */
-  head('■ 自分の結果のリロード');
-  await page.evaluate(() => { try { localStorage.clear(); } catch (e) {} });
-  await page.goto(BASE, { waitUntil: 'networkidle' });
-  await answer(page, { picks: pickFor('chokkan') });
-  await page.waitForSelector('#result:not([hidden])');
-  check('自分の結果に共有バナーは出ない', !(await page.textContent('#result')).includes('共有された診断結果'));
-  await page.reload({ waitUntil: 'networkidle' });
-  check('リロード後も自分の結果扱い', !(await page.textContent('#result')).includes('共有された診断結果'));
-  check('ボタンは「もう一度受ける」', (await page.textContent('#retake')).includes('もう一度受ける'));
-
-  /* ---------------- 完走後の再訪 ---------------- */
-  head('■ 完走後の再訪');
-  await page.goto(BASE, { waitUntil: 'networkidle' });
-  check('再開バーは出ない', (await page.locator('#resume').count()) === 0);
-  await page.click('#start');
-  await page.waitForTimeout(400);
-  check('最終問ではなく最初から始まる', await page.isVisible('#gate'));
-
-  /* ---------------- 戻る操作と履歴 ---------------- */
+  /* ---------------- 履歴 ---------------- */
   head('■ 戻る操作と履歴');
-  await page.evaluate(() => { try { localStorage.clear(); } catch (e) {} });
+  await page.goto('about:blank');
   await page.goto(BASE, { waitUntil: 'networkidle' });
-  await answer(page, { count: 2 });
-  check('3問目にいる', (await page.textContent('#q-now')) === '3');
-  await page.click('#q-back'); await page.waitForTimeout(300);
-  check('戻るで2問目', (await page.textContent('#q-now')) === '2');
-  await page.click('#q-back'); await page.waitForTimeout(300);
-  await page.click('#q-back'); await page.waitForTimeout(300);
-  check('1問目から戻ると属性設問', await page.isVisible('#gate'));
   const h0 = await page.evaluate(() => history.length);
+  await page.click('#start');
+  await writeAndFinish(page);
+  await page.waitForSelector('#gate:not([hidden])');
   await page.click('#g-opts .opt >> nth=0');
-  await page.waitForSelector('#quiz:not([hidden])');
-  for (let i = 0; i < Q.length; i++) {
-    await page.waitForSelector('#q-opts .opt');
-    await page.click('#q-opts .opt >> nth=0');
-    await page.waitForTimeout(330);
-  }
   await page.waitForSelector('#result:not([hidden])');
   const h1 = await page.evaluate(() => history.length);
-  check(`設問を進めても履歴が増えない（差 ${h1 - h0}）`, (h1 - h0) <= 1);
+  check(`結果まで進んでも履歴が増えすぎない（差 ${h1 - h0}）`, (h1 - h0) <= 1);
   await page.goBack(); await page.waitForTimeout(400);
   check('結果からバック1回で導入へ', await page.isVisible('#intro'));
 
-  /* ---------------- 途中復帰 ---------------- */
-  head('■ 途中復帰');
-  await page.evaluate(() => { try { localStorage.clear(); } catch (e) {} });
-  await page.goto(BASE, { waitUntil: 'networkidle' });
-  await answer(page, { count: 4 });
-  await page.goto(BASE, { waitUntil: 'networkidle' });
-  check('再開バーが出る', (await page.locator('#resume').count()) === 1);
-  await page.click('#resume'); await page.waitForTimeout(400);
-  check('続きの設問から再開する', (await page.textContent('#q-now')) === '5');
-
-  /* ---------------- 不正な入力 ---------------- */
-  head('■ 不正な入力');
-  for (const [hash, label] of [['#/r/zzzzz', '範囲外のコード'], ['#/r/aa11a', '不正な文字'],
-                               ['#/r/aaa', '短いコード'], ['#/q/99', '範囲外の設問番号']]) {
-    await page.goto('about:blank');
-    await page.goto(BASE + hash, { waitUntil: 'networkidle' });
-    const safe = (await page.isVisible('#intro')) || (await page.isVisible('#gate'));
-    check(label + ' で壊れない', safe);
+  /* ---------------- 10問版 ---------------- */
+  head('■ 書かずに受ける10問版');
+  const qp = await ctx.newPage();
+  watch(qp);
+  await qp.goto(BASE + 'q.html', { waitUntil: 'networkidle' });
+  await qp.evaluate(() => { try { localStorage.clear(); } catch (e) {} });
+  await qp.goto(BASE + 'q.html', { waitUntil: 'networkidle' });
+  await qp.click('#start');
+  await qp.waitForSelector('#gate:not([hidden])');
+  await qp.click('#g-opts .opt >> nth=0');
+  for (let i = 0; i < C.quiz.questions.length; i++) {
+    await qp.waitForSelector('#q-opts .opt');
+    await qp.click('#q-opts .opt >> nth=' + (i % 4));
+    await qp.waitForTimeout(330);
   }
-  for (const bad of ['constructor', 'toString', 'valueOf', 'hasOwnProperty']) {
-    await page.goto(BASE + '?s=' + bad, { waitUntil: 'networkidle' });
-    await page.evaluate(() => { try { localStorage.clear(); } catch (e) {} });
-    await page.goto(BASE + '?s=' + bad, { waitUntil: 'networkidle' });
-    await answer(page, {});
-    await page.waitForSelector('#result:not([hidden])');
-    const href = await page.evaluate(() => {
-      const e = document.getElementById('back-post');
-      return e ? e.getAttribute('href') : null;
-    });
-    check(`?s=${bad} で壊れたリンクが出ない`, href === null || /^https?:\/\//.test(href));
-  }
-
-  /* ---------------- 共有シートが遅いとき ---------------- */
-  head('■ 共有シートが遅いとき（勝手にコピーへ落ちない）');
-  const slow = await browser.newContext();
-  const sp = await slow.newPage();
-  await sp.addInitScript(() => { navigator.share = () => new Promise((r) => setTimeout(r, 3000)); });
-  await sp.goto(BASE, { waitUntil: 'networkidle' });
-  await answer(sp, {});
-  await sp.waitForSelector('#result:not([hidden])');
-  await sp.click('#sh-native');
-  await sp.waitForTimeout(2000);   // ウォッチドッグ1400msを超えて待つ
-  check('共有中にクリップボードを上書きしない',
-    !(await sp.evaluate(() => document.getElementById('toast').classList.contains('on'))));
-  await slow.close();
+  await qp.waitForSelector('#result:not([hidden])', { timeout: 8000 });
+  const qText = await qp.textContent('#result');
+  check('10問版でも4タイプのどれかが出る', NAMES.some((n) => qText.includes(n)));
+  check('10問版でも点数を出さない', (await qp.locator('.score-num').count()) === 0 && !/結スコア/.test(qText));
+  check('10問版から手書きへ戻れる', (await qp.getAttribute('#to-hw', 'href')) === 'index.html');
+  check('10問版の結果ハッシュが5文字', /^#\/r\/[a-z2-7]{5}$/.test(new URL(qp.url()).hash));
+  check('10問版に差し込み語が残っていない', !/\{[a-zA-Z0-9_]+\}/.test(qText));
 
   /* ---------------- 静的ページ ---------------- */
   head('■ 静的ページ');
@@ -221,12 +268,13 @@ const readStore = (p) =>
     const key = String(t.key).replace(/[^A-Za-z0-9_-]/g, '');
     const res = await page.goto(BASE + 't/' + key + '.html', { waitUntil: 'networkidle' });
     check(`t/${key}.html が開ける`, res.status() === 200);
-    check(`  フッターが描画される`, (await page.textContent('#site-footer')).includes('制作・運営'));
+    check('  フッターが描画される', (await page.textContent('#site-footer')).includes(C.footer.r09.slice(0, 12)));
   }
   const abt = await page.goto(BASE + 'about.html', { waitUntil: 'networkidle' });
   check('about.html が開ける', abt.status() === 200);
 
-  head('■ JSエラー');
+  head('■ 通信とJSエラー');
+  check('外部への通信が1件も無い', external.length === 0, external.slice(0, 3).join(' | '));
   check('JSエラーなし', errors.length === 0, errors.slice(0, 5).join(' | '));
 
   await browser.close();
