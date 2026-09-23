@@ -6,6 +6,8 @@
  *   const { strokes, truth } = SY.make({ ... });                  // truth: 各画がお手本の何画目か
  *   SY.makeOther('ichi' | 'scribble' | 'tiny' | 'segments', { seed, side })   // 「結」でない入力
  *   SY.addTremor(strokes, px, hz)                                 // あとから一定のふるえを足す
+ *   SY.stray(side, x, y, dx, dy, len, t0, dur)                    // 迷い線1本（字と関係のないインク）
+ *   SY.split(strokes, idx, parts, gapMs)                          // idx 番目の画を、途中で指を離して parts 本に切る
  *   SY.transform(strokes, side, (x, y) => [x2, y2])               // 正規化座標で変形（回転・鏡像など）
  *
  * yui/hw-engine.js の TEMPLATE（自作の12画）を、人ごとのクセと指の動きで崩して、
@@ -132,13 +134,17 @@ function buildShape(p, rS) {
     st[k] = rotateAbout(s, c, deg).map(([x, y]) => [x + ox, y + oy]);
   }
   const tanS = Math.tan(p.slantDeg * Math.PI / 180);
+  let h0 = Infinity, h1 = -Infinity;
   const out = st.map((s) => {
     let q = s.map(([x, y]) => [x, 0.5 + (y - 0.5) * p.aspect]);
     q = q.map(([x, y]) => [x, y - tanS * (x - 0.5)]);
+    q.forEach(([, y]) => { h0 = Math.min(h0, y); h1 = Math.max(h1, y); });
     q = rotateAbout(q, [0.5, 0.5], p.rotDeg);
     return q.map(([x, y]) => [p.cx + (x - 0.5) * p.scale, p.cy + (y - 0.5) * p.scale]);
   });
-  return { st: out, corner11 };
+  // 字の高さ（書く速さ speed の単位）は、字全体を回す前の高さで測る。スマホを斜めに持っただけで
+  // 画面の上の高さが伸び、同じ人が速く書いたことにならないように。
+  return { st: out, corner11, charH: (h1 - h0) * p.scale };
 }
 
 /* 何画をどうまとめて書くか。連綿は、実際の続け書きに近い経路にします。 */
@@ -296,6 +302,29 @@ function addTremor(strokes, A, hz) {
     return { x: q.x + w[0], y: q.y + w[1], t: q.t };
   }) }));
 }
+/* 迷い線1本：キャンバス一辺=1 の (x, y) から向き (dx, dy) へ長さ len の直線を、t0 から dur ms かけて引く。
+ * 点はキャンバス一辺の 2% ごと（最低4点）、最後の点は pointerup（同じ位置）。字と関係のないインクが
+ * 測定に紛れ込まないかを確かめるためのものです（指が触れてずれた・書く前に試しに引いた、など）。 */
+function stray(side, x, y, dx, dy, len, t0, dur) {
+  const n = Math.hypot(dx, dy) || 1, k = Math.max(3, Math.round(len / 0.02)), pts = [];
+  for (let q = 0; q <= k; q++) pts.push({ x: (x + dx / n * len * q / k) * side, y: (y + dy / n * len * q / k) * side, t: t0 + dur * q / (k + 1) });
+  pts.push({ x: pts[k].x, y: pts[k].y, t: t0 + dur });
+  return { points: pts };
+}
+/* idx 番目の画を、途中で gapMs だけ指を離して parts 本に切る（点を等分し、あとの画は gapMs ずつ後ろへずらす）。
+ * 切れ目の前の線は、その位置で離した（pointerup が最後の点と同じ位置・時刻）ことにします。 */
+function split(strokes, idx, parts, gapMs) {
+  const s = strokes[idx], n = s.points.length, out = [];
+  let shift = 0;
+  for (let q = 0; q < parts; q++) {
+    const a = Math.floor(q * (n - 1) / parts), b = Math.floor((q + 1) * (n - 1) / parts);
+    const pts = s.points.slice(a, b + 1).map((p) => ({ x: p.x, y: p.y, t: p.t + shift }));
+    if (q < parts - 1) { pts.push(Object.assign({}, pts[pts.length - 1])); shift += gapMs; }
+    out.push({ points: pts });
+  }
+  const rest = strokes.slice(idx + 1).map((x) => ({ points: x.points.map((p) => ({ x: p.x, y: p.y, t: p.t + shift })) }));
+  return strokes.slice(0, idx).concat(out, rest);
+}
 /* 正規化座標（キャンバス一辺=1）での変形。f(x, y) → [x, y] */
 function transform(strokes, side, f) {
   return strokes.map((s) => ({ points: s.points.map((q) => {
@@ -316,9 +345,7 @@ function make(params) {
   const rS = mulberry32(p.seed >>> 0);
   const shape = buildShape(p, rS);
   const groups = buildGroups(p, shape);
-  let y0 = Infinity, y1 = -Infinity;
-  shape.st.forEach((s) => s.forEach(([, y]) => { y0 = Math.min(y0, y); y1 = Math.max(y1, y); }));
-  const strokes = drawGroups(groups, p, y1 - y0, p.seed >>> 0);
+  const strokes = drawGroups(groups, p, shape.charH, p.seed >>> 0);
   return { strokes, truth: groups.map((g) => g.nums.slice()), params: p };
 }
 function synth(params) { return make(params).strokes; }
@@ -350,4 +377,4 @@ function makeOther(kind, params) {
   return drawGroups(groups, p, 0.6, p.seed >>> 0);
 }
 
-module.exports = { synth, make, makeOther, addTremor, transform, mulberry32, gauss, DEFAULTS };
+module.exports = { synth, make, makeOther, addTremor, stray, split, transform, mulberry32, gauss, DEFAULTS };

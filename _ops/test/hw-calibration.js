@@ -14,7 +14,11 @@
  * 関門（仕様書 scoring_approach）
  *   (a) 各タイプが 15〜35%
  *   (b) |Spearman ρ(x, y)| < 0.3
- *   ・いちばん特徴が出た測定値が、1つに 40% を超えて偏らない
+ *   ・いちばん特徴が出た測定値が、1つに 40% を超えて偏らない（全体・点の間隔 240Hz の端末・ふるえのある人のそれぞれで。
+ *     端末とふるえは、2回平均と1回書き（画面では2回目は任意）の両方で）
+ *   ・エンジンのとめのしきい値 HW.STOP_MS が、この較正の f5 の中央値と同じ（画面側は analyze() に cal を渡さないので、
+ *     違うと、とめの印と「いちばん特徴」の f5 の向きが食い違う）
+ *   関門が1つでも未達なら、終了コードは 1 です。
  *   (a)(b) と偏りは、中央値・軸の中心を決めた人たちとは別の人たち（検証用の別の種）で確かめます。
  *   同じ人たちで確かめると、中心を中央値に置いた時点で (a) がほぼ自動的に満たされるためです。
  *   (e) の代わり：ふるえのある人（2px・8Hz）だけを取り出しても、型の割合が 15 ポイント以上ずれないか
@@ -22,6 +26,8 @@
  *   参考：同じ人の同じ字を、キャンバス 300/400px、点の間隔 60/240Hz で書いたときに型が一致するか
  *   参考：別の日にもう一度書いたとき（関門 (c) の見込み）。日ごとのずれの大きさは仮定なので、
  *         ずれの大きさを数段階に変え、軸の再現性 r ≈ .8 と .7 のときの一致率を示します（上限の目安）。
+ *         画面では2回目が任意なので、2回平均どうしに加えて、1回書きどうし（それぞれの日の1回目だけ）の一致も並べます。
+ *         「いちばん特徴が出ていたところ」が同じになる割合（特徴と向き）も、2回平均・1回書きの両方で示します。
  * 関門を満たさなくても、分布の仮定を合わせにいくことはしません。未達はそのまま報告します。
  */
 'use strict';
@@ -188,8 +194,11 @@ function pearson(x, y) {
 const spearman = (x, y) => pearson(ranks(x), ranks(y));
 const pct = (v) => (100 * v).toFixed(1) + '%';
 
-/* 尺度の下限：測定の刻み（丸め）より細かい差で z が振り切れないように */
-const FLOOR = { f1: 0.5, f2: 0.01, f3: 0.5, f4: 0.5, f5: 10, f6: 0.05, f7: 0.02, f8: 0.02, f9: 0.5, f10: 0.5, f11: 0.01, f12: 0.5, f13: 0.02 };
+/* 尺度の下限：測定の刻み（丸め）より細かい差で z が振り切れないように。
+ * 横画のばらつき f3 は 0.5° 刻みで、中央値のまわりの散らばりが刻み1つ分ほどしかないので、IQR から出した尺度が
+ * 刻みと同じ 0.5 に張りつき、1目盛りずれただけで |z|=1 になっていました（「いちばん特徴」の 38.7% を f3 が占めた原因）。
+ * 刻み2つ分（1.0°）を下限にします。 */
+const FLOOR = { f1: 0.5, f2: 0.01, f3: 1.0, f4: 0.5, f5: 10, f6: 0.05, f7: 0.02, f8: 0.02, f9: 0.5, f10: 0.5, f11: 0.01, f12: 0.5, f13: 0.02 };
 const CODE = { closed: -1, ambiguous: 0, open: 1 };
 function valueOf(f, k) {
   const v = f[k];
@@ -227,7 +236,8 @@ function fitCal(featsList) {
 }
 
 /* 1人分：2回書いて特徴量ごとに平均する（本番と同じ流れ）。
- * over は2回とも上書きする書き方（端末・ふるえなど）、tf はできあがった線への変形（あとから足すふるえ等）。 */
+ * over は2回とも上書きする書き方（端末・ふるえなど）、tf はできあがった線への変形（あとから足すふるえ等）。
+ * one は1回目だけの結果（2回目を書かなかった人と同じ扱い）。 */
 function measure(p, seedBase, over, tf) {
   const r = mulberry32(seedBase);
   const w1 = Object.assign(writing(p, r, seedBase * 2 + 1), over || {});
@@ -235,7 +245,8 @@ function measure(p, seedBase, over, tf) {
   const s1 = SY.synth(w1), s2 = SY.synth(w2);
   const a = HW.analyze(tf ? tf(s1, w1) : s1, { side: w1.side });
   const b = HW.analyze(tf ? tf(s2, w2) : s2, { side: w2.side });
-  return { ok: a.ok && b.ok, feats: HW.average(a.feats, b.feats), problems: a.problems.concat(b.problems), marks: b.marks };
+  return { ok: a.ok && b.ok, feats: HW.average(a.feats, b.feats), problems: a.problems.concat(b.problems), marks: b.marks,
+    one: { ok: a.ok, feats: a.feats, marks: a.marks } };
 }
 /* 別の日の1人分（段階 L の日ごとのずれ）。日ごとのずれの乱数は、書く回の乱数とは別の種から */
 function measureDay(p, seedBase, L) {
@@ -248,6 +259,15 @@ function shares(list) {
   return o;
 }
 const shareTxt = (o) => TYPES.map((t) => `${t} ${pct(o[t])}`).join(' / ');
+/* 「いちばん特徴が出ていたところ」の内訳と、いちばん多いものの割合 */
+function hlShares(list) {
+  const c = {};
+  list.forEach((s) => { const k = s.highlight ? s.highlight.feature : 'none'; c[k] = (c[k] || 0) + 1; });
+  const keys = Object.keys(c).filter((k) => k !== 'none');
+  const max = keys.length ? Math.max(...keys.map((k) => c[k])) / list.length : 0;
+  return { max, txt: Object.keys(c).sort().map((k) => `${k} ${pct(c[k] / list.length)}`).join(' / ') };
+}
+const hlKey = (s) => (s.highlight ? s.highlight.feature + (s.highlight.sign > 0 ? '+' : '-') : 'none');
 
 function main() {
   const N = +process.argv[2] || 3000;
@@ -281,6 +301,12 @@ function main() {
     console.log(`  ${k.padEnd(4)} n=${String(v.length).padStart(4)}  中央値 ${String(features[k].median).padStart(7)}  尺度 ${String(features[k].scale).padStart(7)}${extra}`);
   });
   const scFit = valid.map((m) => HW.score(m.feats, cal));
+  /* とめの印のしきい値：画面側は analyze() に cal を渡さないので、エンジンの STOP_MS が画面のしきい値になる。
+   * これが較正の f5 の中央値と違うと、とめの印と「いちばん特徴」の f5 の向きが食い違う */
+  console.log(`\n■ 関門：エンジンのとめのしきい値（HW.STOP_MS）と、この較正の f5 の中央値`);
+  let gatesPre = 0;
+  if (HW.STOP_MS === features.f5.median) console.log(`  ok   STOP_MS ${HW.STOP_MS}ms = 中央値 ${features.f5.median}ms`);
+  else { console.log(`  未達 STOP_MS ${HW.STOP_MS}ms ≠ 中央値 ${features.f5.median}ms（yui/hw-engine.js の STOP_MS を ${features.f5.median} に）`); gatesPre++; }
 
   /* ---- 検証用の別の人たち ---- */
   const rh = mulberry32(20260924);
@@ -290,22 +316,24 @@ function main() {
   const sc = hv.map((m) => HW.score(m.feats, cal));
   const share = shares(sc);
   const rho = spearman(sc.map((s) => s.x), sc.map((s) => s.y));
-  let gates = 0;
+  let gates = gatesPre;
   const gate = (okk, msg) => { console.log((okk ? '  ok   ' : '  未達 ') + msg); if (!okk) gates++; };
 
   console.log(`\n■ 関門（検証用の別の ${sc.length} 人。中心を決めた ${scFit.length} 人とは別）`);
   TYPES.forEach((t) => gate(share[t] >= 0.15 && share[t] <= 0.35, `${t.padEnd(8)} ${pct(share[t])}（15〜35%）`));
   gate(Math.abs(rho) < 0.3, `Spearman ρ(x, y) = ${rho.toFixed(3)}（|ρ| < 0.3）`);
-  const hl = {};
-  sc.forEach((s) => { const k = s.highlight ? s.highlight.feature : 'none'; hl[k] = (hl[k] || 0) + 1; });
-  const hlMax = Math.max(...Object.keys(hl).filter((k) => k !== 'none').map((k) => hl[k])) / sc.length;
-  gate(hlMax <= 0.40, 'いちばん特徴が出た測定値の偏り 最大 ' + pct(hlMax) + '（40% 以下） ' +
-    Object.keys(hl).sort().map((k) => `${k} ${pct(hl[k] / sc.length)}`).join(' / '));
+  const hl = hlShares(sc);
+  gate(hl.max <= 0.40, 'いちばん特徴が出た測定値の偏り 最大 ' + pct(hl.max) + '（40% 以下） ' + hl.txt);
   const amb = sc.filter((s, i) => s.highlight && (s.highlight.feature === 'f9' || s.highlight.feature === 'f10') &&
     hv[i].feats[s.highlight.feature].state === 'ambiguous').length;
   gate(amb === 0, `口の角が「あいまい」のまま「いちばん特徴」に選ばれた人: ${amb}`);
   console.log('  参考：中心を決めた人たち自身での割合 ' + shareTxt(shares(scFit)) +
     `、ρ=${spearman(scFit.map((s) => s.x), scFit.map((s) => s.y)).toFixed(3)}`);
+  /* 参考：2回目を書かなかった人（1回目だけで採点。較正は2回平均から作ったものをそのまま使う） */
+  const sc1 = hv.filter((m) => m.one.ok).map((m) => HW.score(m.one.feats, cal));
+  const hl1 = hlShares(sc1);
+  console.log(`  参考：1回書きだけで採点したとき（${sc1.length} 人）: ${shareTxt(shares(sc1))}、` +
+    `ρ=${spearman(sc1.map((s) => s.x), sc1.map((s) => s.y)).toFixed(3)}、いちばん特徴 最大 ${pct(hl1.max)}（${hl1.txt}）`);
 
   console.log('\n■ 境界付近（「○○型寄り」と出る人、検証用の人たち）');
   const leanShare = sc.filter((s) => s.lean.x || s.lean.y).length / sc.length;
@@ -337,6 +365,22 @@ function main() {
   cmp('あとから足したふるえ（離す点だけ跳ぶ、厳しい条件）', tremPost, 15);
   console.log('  ※ 単体テストでは、さらに厳しく 5 ポイント以内を確かめています（_ops/test/hw-engine.test.js）');
 
+  /* ---- 「いちばん特徴」の偏り：端末（240Hz）・ふるえのある人でも 40% 以下か ---- */
+  console.log(`\n■ 関門：いちばん特徴が出た測定値の偏り（同じ ${M} 人を、条件を変えて）`);
+  // 2回平均に加えて、1回書き（2回目を書かなかった人。画面では2回目は任意）でも確かめる
+  const hlGate = (label, list) => {
+    const s = list.filter((m) => m.ok).map((m) => HW.score(m.feats, cal));
+    const s1 = list.filter((m) => m.one.ok).map((m) => HW.score(m.one.feats, cal));
+    const h = hlShares(s), h1 = hlShares(s1);
+    gate(h.max <= 0.40, `${label}・2回平均（${s.length} 人）: 最大 ${pct(h.max)}（40% 以下） ${h.txt}`);
+    gate(h1.max <= 0.40, `${label}・1回書き（${s1.length} 人）: 最大 ${pct(h1.max)}（40% 以下） ${h1.txt}`);
+  };
+  const hz240 = [];
+  for (let i = 0; i < M; i++) hz240.push(measure(people[i], 1000 + i, { hz: 240 }));
+  hlGate('点の間隔 240Hz の端末', hz240);
+  hlGate('ふるえ 2px・8Hz（止めている間も揺れ続ける）', trem);
+  hlGate('ふるえ 2px・8Hz（あとから足す）', tremPost);
+
   /* ---- 端末を変えても型が変わらないか（同じ人・同じ種） ---- */
   console.log('\n■ 参考：同じ人・同じ字で、端末だけを変えたときの型の一致');
   const agree = (a, b) => {
@@ -355,37 +399,53 @@ function main() {
   console.log(`  点の間隔 60Hz ↔ 240Hz: ${pct(hzA.same / hzA.n)}（${hzA.same}/${hzA.n}）`);
 
   /* ---- 参考：別の日（日ごとのずれの大きさを変えて） ---- */
-  console.log(`\n■ 参考：別の日にもう一度（2回平均どうし、${M} 人）。日ごとのずれは仮定なので、段階を変えて示します`);
-  const rows = [];
+  console.log(`\n■ 参考：別の日にもう一度（${M} 人）。日ごとのずれは仮定なので、段階を変えて示します`);
+  console.log('  2回平均＝その日に2回書いて平均したものどうし／1回書き＝それぞれの日の1回目だけどうし（画面では2回目は任意）');
+  const rows = [], rows1 = [];
   const code = { closed: -1, ambiguous: 0, open: 1 };
-  const fv = (m, k) => { const x = m.feats[k]; return x && typeof x === 'object' ? code[x.state] : x; };
+  const fv = (f, k) => { const x = f[k]; return x && typeof x === 'object' ? code[x.state] : x; };
+  const agreeOf = (A, B) => ({
+    rx: pearson(A.map((s) => s.x), B.map((s) => s.x)), ry: pearson(A.map((s) => s.y), B.map((s) => s.y)),
+    same: A.filter((s, i) => s.key === B[i].key).length / A.length,
+    hl: A.filter((s, i) => hlKey(s) === hlKey(B[i])).length / A.length,
+    n: A.length
+  });
   [0, 1, 2, 3].forEach((L) => {
-    const A = [], B = [], MA = [], MB = [];
+    const A = [], B = [], FA = [], FB = [], A1 = [], B1 = [];
     for (let i = 0; i < M; i++) {
       const b = measureDay(people[i], 500000 + i, L);
-      if (!base[i].ok || !b.ok) continue;
-      MA.push(base[i]); MB.push(b);
-      A.push(HW.score(base[i].feats, cal)); B.push(HW.score(b.feats, cal));
+      if (base[i].ok && b.ok) {
+        FA.push(base[i].feats); FB.push(b.feats);
+        A.push(HW.score(base[i].feats, cal)); B.push(HW.score(b.feats, cal));
+      }
+      if (base[i].one.ok && b.one.ok) { A1.push(HW.score(base[i].one.feats, cal)); B1.push(HW.score(b.one.feats, cal)); }
     }
-    const rx = pearson(A.map((s) => s.x), B.map((s) => s.x)), ry = pearson(A.map((s) => s.y), B.map((s) => s.y));
-    const same = A.filter((s, i) => s.key === B[i].key).length / A.length;
+    const g2 = agreeOf(A, B), g1 = agreeOf(A1, B1);
     const fr = ['f1', 'f2', 'f3', 'f4', 'f5', 'f6', 'f7', 'f8'].map((k) => {
-      const idx = MA.map((_, i) => i).filter((i) => fv(MA[i], k) !== null && fv(MB[i], k) !== null);
-      return `${k} ${pearson(idx.map((i) => fv(MA[i], k)), idx.map((i) => fv(MB[i], k))).toFixed(2)}`;
+      const idx = FA.map((_, i) => i).filter((i) => fv(FA[i], k) !== null && fv(FB[i], k) !== null);
+      return `${k} ${pearson(idx.map((i) => fv(FA[i], k)), idx.map((i) => fv(FB[i], k))).toFixed(2)}`;
     }).join(' ');
-    rows.push({ L, r: (rx + ry) / 2, same });
-    console.log(`  段階 L=${L}: 軸の再現性 x ${rx.toFixed(2)} / y ${ry.toFixed(2)}、同じ型 ${pct(same)}（${A.length} 人）  特徴 ${fr}`);
+    rows.push({ L, r: (g2.rx + g2.ry) / 2, same: g2.same });
+    rows1.push({ L, r: (g1.rx + g1.ry) / 2, same: g1.same });
+    console.log(`  段階 L=${L}: 同じ型 2回平均 ${pct(g2.same)}（${g2.n} 人）／1回書き ${pct(g1.same)}（${g1.n} 人）` +
+      `  軸の再現性 2回平均 x ${g2.rx.toFixed(2)} y ${g2.ry.toFixed(2)}／1回書き x ${g1.rx.toFixed(2)} y ${g1.ry.toFixed(2)}`);
+    console.log(`           いちばん特徴（特徴と向き）が同じ 2回平均 ${pct(g2.hl)}／1回書き ${pct(g1.hl)}  特徴の再現性（2回平均） ${fr}`);
   });
+  /* 2回平均の軸の再現性が r になる段階（L の間を直線で補う）で、2回平均と1回書きの一致率を読む。
+   * 1回書きも同じ段階（同じ日ごとのずれ）で読むので、2つの値は同じ人・同じずれでの比較になります。 */
   const at = (r) => {
     for (let i = 1; i < rows.length; i++) {
       const a = rows[i - 1], b = rows[i];
-      if ((a.r - r) * (b.r - r) <= 0 && a.r !== b.r) return a.same + (b.same - a.same) * (r - a.r) / (b.r - a.r);
+      if ((a.r - r) * (b.r - r) <= 0 && a.r !== b.r) {
+        const u = (r - a.r) / (b.r - a.r);
+        return { two: a.same + (b.same - a.same) * u, one: rows1[i - 1].same + (rows1[i].same - rows1[i - 1].same) * u };
+      }
     }
     return null;
   };
   [0.8, 0.7].forEach((r) => {
     const v = at(r);
-    console.log(`  軸の再現性 r ≈ ${r} のとき: 同じ型 ${v === null ? '（段階の範囲外）' : pct(v)}（段階の間を直線で補った値）`);
+    console.log(`  2回平均の軸の再現性 r ≈ ${r} の段階で: 同じ型 2回平均 ${v ? pct(v.two) : '（段階の範囲外）'}／1回書き ${v ? pct(v.one) : '（段階の範囲外）'}（段階の間を直線で補った値）`);
   });
   console.log('  ※ L=0 は日ごとのずれを入れない上限です。どの段階の値も仮定から出した上限の目安で、関門(c) 70% の判断は実データで行います。');
 
@@ -412,6 +472,7 @@ function main() {
     features, weights: WEIGHTS, dirs: DIRS, center, axisScale, boundary: 0.25
   }, null, 2));
   console.log(`\n（${((Date.now() - t0) / 1000).toFixed(1)} 秒）` + (gates ? `  関門の未達 ${gates} 件` : '  関門はすべて通過'));
+  process.exitCode = gates ? 1 : 0;
 }
 
 module.exports = { person, writing, day, measure, measureDay, fitCal, WEIGHTS, DIRS, FLOOR };
