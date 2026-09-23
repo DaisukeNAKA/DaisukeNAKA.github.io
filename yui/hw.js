@@ -291,10 +291,13 @@
     /* 結果のアドレスに入れられない組み合わせのときも、画面は出します（共有のリンクはタイプ別ページを指すため）。 */
     nv.nav("#/r/" + (code || "self"));
   }
+  /* 見分け用の記号は 12 ビット（4096 通り）にとどめます。有効な結果のアドレスは約49万通りあるので、
+     1つの記号に100以上のアドレスが当たり、記号から測った値を割り出せません（footer.r11 の約束）。
+     同じ型のほかの方のリンクを自分の結果と取り違える確率は 1/4096 です。 */
   function codeHash(str) {
     var h = 5381;
     for (var i = 0; i < str.length; i++) { h = ((h * 33) ^ str.charCodeAt(i)) >>> 0; }
-    return h.toString(36);
+    return (h & 4095).toString(36);
   }
   function readLast() {
     var raw = Y.store.get(LKEY);
