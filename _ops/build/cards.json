@@ -3,11 +3,11 @@
     "slug": "yui-top",
     "accent": "#c8453c",
     "accentDark": "#e8776c",
-    "kicker": "婚活タイプ診断 ／ 結婚相談所AGOEN",
-    "headline": "「結」の\n書き方診断",
-    "headlineSize": 68,
-    "sub": "あなたの婚活は、\nどこで止まっていますか。",
-    "foot": "10問・約3分・無料 ／ daisukenaka.github.io/yui"
+    "kicker": "結婚相談所AGOENの無料診断",
+    "headline": "「結」を一文字、\n指で書いてみる",
+    "headlineSize": 60,
+    "sub": "書いたクセを、AGOENのルールで\n4つの婚活タイプに当てはめる\n遊びの診断",
+    "foot": "指で書く・約1分・無料 ／ daisukenaka.github.io/yui"
   },
   {
     "slug": "sekkei",
@@ -16,8 +16,8 @@
     "kicker": "「結」の書き方診断 ／ 4タイプ",
     "headline": "設計型",
     "headlineSize": 76,
-    "sub": "条件は正しい。正しすぎて、\n会える人が消えています。",
-    "foot": "10問・約3分・無料 ／ daisukenaka.github.io/yui"
+    "sub": "条件を言葉にしてから\n動く進め方",
+    "foot": "指で書く遊びの診断・約1分・無料 ／ daisukenaka.github.io/yui"
   },
   {
     "slug": "kyomei",
@@ -26,8 +26,8 @@
     "kicker": "「結」の書き方診断 ／ 4タイプ",
     "headline": "共鳴型",
     "headlineSize": 76,
-    "sub": "見る目はあります。その目が\n使われないまま終わります。",
-    "foot": "10問・約3分・無料 ／ daisukenaka.github.io/yui"
+    "sub": "会ったときの空気で\n確かめていく進め方",
+    "foot": "指で書く遊びの診断・約1分・無料 ／ daisukenaka.github.io/yui"
   },
   {
     "slug": "suishin",
@@ -36,8 +36,8 @@
     "kicker": "「結」の書き方診断 ／ 4タイプ",
     "headline": "推進型",
     "headlineSize": 76,
-    "sub": "量は足りている。ただ、\nその量から学んでいません。",
-    "foot": "10問・約3分・無料 ／ daisukenaka.github.io/yui"
+    "sub": "会う数を重ねながら\n前へ出ていく進め方",
+    "foot": "指で書く遊びの診断・約1分・無料 ／ daisukenaka.github.io/yui"
   },
   {
     "slug": "chokkan",
@@ -46,7 +46,7 @@
     "kicker": "「結」の書き方診断 ／ 4タイプ",
     "headline": "直感型",
     "headlineSize": 76,
-    "sub": "距離はいちばん早く縮まり、\nいちばん手前で止まります。",
-    "foot": "10問・約3分・無料 ／ daisukenaka.github.io/yui"
+    "sub": "会ってからの手ざわりで\n決めていく進め方",
+    "foot": "指で書く遊びの診断・約1分・無料 ／ daisukenaka.github.io/yui"
   }
 ]

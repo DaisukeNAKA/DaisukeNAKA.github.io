@@ -6,46 +6,54 @@
  * ここを設問式に置き換えないでください。書かずに受けたい方のための10問版は q.html にあります。
  *
  * 書いた線はこのページのメモリの中だけで扱い、外へは送りません（CSP で通信自体を止めています）。
- * 端末に残すのは、前回の型の名前だけです。
+ * 端末に残すのは、前回の型の名前と保存した時刻だけです（yui.hw.last）。
+ * 文言の置き場所と出し分けの決まりは content.js（YUI_HW_COPY の section 4・5・6・9）にあります。
  * ========================================================================= */
 (function () {
   "use strict";
 
   var Y = window.YUI, HW = window.YUI_HW;
   if (!Y || !HW || !document.getElementById("intro")) { return; }
-  var C = Y.C, CFG = Y.CFG, $ = Y.$, esc = Y.esc, fill = Y.fill;
+  var C = Y.C, $ = Y.$, esc = Y.esc, fill = Y.fill;
   var H = C.hw || {}, IN = H.intro || {}, WR = H.write || {}, GT = H.gate || {}, RS = H.result || {};
-  var FT = H.features || {}, TH = H.themes || {};
+  var FT = H.features || {}, TH = H.themes || {}, TD = H.themeDirection || {}, CO = H.collect || {};
+  var SH = C.share || {};
   var CAL = C.calibration;
   var LKEY = "yui.hw.last";
-  /* 解析に渡す座標系。画面の大きさや回転に左右されないよう、線は枠の一辺を1とした値で持ち、
-     解析のときだけこの大きさに引き伸ばします（解析側も一辺で割り戻すので、値は変わりません）。 */
+  /* 解析に渡す座標系。線は枠の一辺を1とした値で持ち、解析のときだけこの大きさに引き伸ばします
+     （解析側も一辺で割り戻すので値は変わりません。画面の回転や大きさに左右されないため）。 */
   var ANALYSIS_SIDE = 1000;
+  var COLLECT = /[?&]collect=1(?:&|$)/.test(location.search || "");
+
+  /* お手本の縦横比と、士の縦画の突き出し。f7・f13 はお手本との差で返ってくるので、
+     画面では、お手本の値を足して「高さ÷幅」「突き出しの%」に戻して見せます。 */
+  var TPL = (function () {
+    if (typeof HW.TPL_RATIO === "number" && typeof HW.TPL_F13 === "number") { return { ratio: HW.TPL_RATIO, f13: HW.TPL_F13 }; }
+    var x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+    (HW.TEMPLATE || []).forEach(function (st) {
+      st.pts.forEach(function (p) { x0 = Math.min(x0, p[0]); x1 = Math.max(x1, p[0]); y0 = Math.min(y0, p[1]); y1 = Math.max(y1, p[1]); });
+    });
+    var ratio = (x1 > x0) ? (y1 - y0) / (x1 - x0) : 1;
+    function st(n) { for (var i = 0; i < HW.TEMPLATE.length; i++) { if (HW.TEMPLATE[i].n === n) { return HW.TEMPLATE[i].pts; } } return null; }
+    var s7 = st(7), s8 = st(8), s9 = st(9), f13 = 0;
+    if (s7 && s8 && s9) {
+      var top8 = Math.min.apply(null, s8.map(function (p) { return p[1]; }));
+      var y7 = (s7[0][1] + s7[s7.length - 1][1]) / 2, y9 = (s9[0][1] + s9[s9.length - 1][1]) / 2;
+      f13 = (y9 - y7) ? (y7 - top8) / (y9 - y7) : 0;
+    }
+    return { ratio: ratio, f13: f13 };
+  })();
 
   /* ========== 状態（すべてメモリの中だけ） ========== */
   var S = {
-    pass: 1,          /* 1回目か2回目か */
+    pass: 1,
     strokes: [],      /* 書いている最中の線 [{points:[{x,y,t}]}]（0〜1の正規化座標） */
-    a1: null, a2: null, s1: null, s2: null,  /* 解析結果と、その線 */
+    a1: null, a2: null, s1: null, s2: null,
     qualify: -1,
-    current: null,    /* 直近に出した結果 {code, key, scored, feats} */
+    current: null,
     cancels: 0
   };
-
   var nv = Y.makeNav(route);
-
-  /* ========== 導入の文言（index.html に静的に書き出した値を同じ値で上書き） ========== */
-  Y.setText("c-r01", IN.r01);
-  Y.setText("c-catch", IN.catch);
-  Y.setText("c-hook", IN.hook);
-  Y.setText("c-r02", IN.r02);
-  Y.setText("c-r03", IN.r03);
-  Y.setText("start", IN.startButton);
-  Y.setText("start2", IN.startButton);
-  Y.setText("alt-quiz-intro", IN.altLink);
-  Y.bullets("c-promise", IN.promise);
-  Y.bullets("c-whofor", IN.whoFor);
-  Y.setText("c-author", IN.author);
 
   function screen(which) {
     ["intro", "write", "gate", "result"].forEach(function (id) { var n = $(id); if (n) { n.hidden = (id !== which); } });
@@ -86,7 +94,7 @@
     ctx.lineCap = "round";
     ctx.lineJoin = "round";
     /* 表示の線幅も、解析の接筆判定と同じ比（一辺の2.2%）にします。見た目と判定がずれないように。 */
-    ctx.lineWidth = Math.max(3, side * 0.022);
+    ctx.lineWidth = Math.max(3, side * (HW.LW || 0.022));
     ctx.strokeStyle = inkColor();
     S.strokes.forEach(drawStroke);
     if (active) { drawStroke(active.stroke); }
@@ -128,7 +136,7 @@
     });
     cv.addEventListener("pointerup", function (e) {
       if (!active || e.pointerId !== active.id) { return; }
-      /* 指を離した時刻を最後の点として持ちます。止めてから離したか（とめ）を測るのに使います。 */
+      /* 指を離した位置と時刻を最後の点にします。止めてから離したか（とめ）を測るのに使います。 */
       active.stroke.points.push(localPoint(e));
       S.strokes.push(active.stroke);
       active = null;
@@ -155,10 +163,14 @@
   Y.on("w-clear", function () { S.strokes = []; problem(""); redraw(); });
   Y.on("w-done", function () {
     var a = analyzeCurrent();
-    if (!a) { return; }
-    if (!a.ok) {
-      var msgs = (a.problems || []).map(function (c) { return (WR.problems || {})[c]; }).filter(Boolean);
-      problem(msgs.slice(0, 2).join(" ") || (WR.problems && WR.problems.tooFewStrokes));
+    if (!a || !a.ok) {
+      var P = WR.problems || {};
+      var codes = a && a.problems && a.problems.length ? a.problems : ["noMatch"];
+      /* 知らない理由コードでも、同じ「もう一度」の案内を出します（エンジンの約束）。 */
+      var msgs = codes.map(function (c) { return P[c] || P.noMatch || P.tooFewStrokes; }).filter(Boolean);
+      var uniq = [];
+      msgs.forEach(function (m) { if (uniq.indexOf(m) < 0) { uniq.push(m); } });
+      problem(uniq.slice(0, 2).join(" "));
       return;
     }
     if (S.pass === 2) { S.a2 = a; S.s2 = S.strokes.slice(); }
@@ -173,10 +185,7 @@
       return { points: st.points.map(function (p) { return { x: p.x * ANALYSIS_SIDE, y: p.y * ANALYSIS_SIDE, t: p.t }; }) };
     });
     try { return HW.analyze(scaled, { side: ANALYSIS_SIDE }); }
-    catch (e) {
-      problem(WR.problems && WR.problems.tooFewStrokes);
-      return null;
-    }
+    catch (e) { return null; }
   }
 
   function showWrite(pass) {
@@ -188,23 +197,22 @@
     screen("write");
     window.scrollTo(0, 0);
     resize();
-    /* 枠を画面の中央へ。ページ最上部のまま書き始めると、下向きの画でアプリの「引っ張って更新」が
+    /* 枠を画面の中央へ。最上部のまま書き始めると、下向きの画でアプリの「引っ張って更新」が
        反応することがあるためです。 */
     try { pad.scrollIntoView({ block: "center" }); } catch (e) {}
     try { $("w-heading").focus({ preventScroll: true }); } catch (e) {}
   }
 
   if (!Y.caps.pointer) {
-    /* Pointer Events が無い古い環境では、手書きの精度が保てないため10問版へ案内します。 */
+    /* Pointer Events が無い古い環境では、書いた線を正しく測れないため10問版へ案内します。 */
     if ($("w-nopointer")) { $("w-nopointer").hidden = false; }
     if ($("pad-wrap")) { $("pad-wrap").hidden = true; }
   }
 
-  /* ========== 属性設問（書いたあとに1問だけ。結果には影響しません） ========== */
+  /* ========== 属性設問（書いたあとに1問だけ。型には影響しません） ========== */
   function renderGate() {
     Y.setText("g-scene", GT.scene || C.qualify.scene);
     Y.setText("g-text", GT.text || C.qualify.text);
-    Y.setText("g-note", GT.note);
     var host = $("g-opts");
     host.innerHTML = "";
     C.qualify.options.forEach(function (opt, i) {
@@ -213,10 +221,7 @@
       b.className = "opt";
       b.textContent = opt.label;
       b.setAttribute("data-mark", String(i + 1));
-      b.addEventListener("click", function () {
-        S.qualify = i;
-        showOwnResult();
-      });
+      b.addEventListener("click", function () { S.qualify = i; showOwnResult(); });
       host.appendChild(b);
     });
     screen("gate");
@@ -224,20 +229,23 @@
     window.scrollTo(0, 0);
   }
 
-  /* ========== 採点と結果 ========== */
+  /* ========== 採点 ========== */
   function currentFeats() {
     if (S.a1 && S.a2) { return HW.average(S.a1.feats, S.a2.feats); }
     return S.a1 ? S.a1.feats : null;
   }
+  function drawnMarks() { var a = S.a2 || S.a1; return a ? a.marks : null; }
   function showOwnResult() {
     var feats = currentFeats();
-    if (!feats) { nv.nav("#/write"); return; }
-    var scored = HW.score(feats, CAL);
-    var code = HW.encodeShare(scored, feats);
+    var scored = feats ? HW.score(feats, CAL) : null;
+    if (!scored) { nv.nav("#/write"); return; }
+    var code = HW.encodeShare(scored, feats, drawnMarks());
     var prev = readLast();
-    S.current = { code: code, key: scored.key, scored: scored, feats: feats, prevKey: prev && prev.k !== scored.key ? prev.k : null };
+    S.current = { code: code, key: scored.key, scored: scored, feats: feats,
+                  prevKey: prev && prev.k !== scored.key ? prev.k : null };
     Y.store.set(LKEY, JSON.stringify({ k: scored.key, t: Date.now() }));
-    nv.nav("#/r/" + code);
+    /* 結果のアドレスに入れられない組み合わせのときも、画面は出します（共有のリンクはタイプ別ページを指すため）。 */
+    nv.nav("#/r/" + (code || "self"));
   }
   function readLast() {
     var raw = Y.store.get(LKEY);
@@ -249,60 +257,111 @@
     return null;
   }
 
-  /* 測定値の差し込み語。文言側はこの中から必要なものだけを使います。 */
-  function tokensFor(fk, feats) {
-    var v = feats[fk];
-    var cf = (CAL && CAL.features && CAL.features[fk]) || {};
-    var med = typeof cf.median === "number" ? cf.median : null;
-    var num = (typeof v === "number") ? v : (v && typeof v.ratio === "number" ? v.ratio : (v && typeof v.v === "number" ? v.v : null));
-    function r1(x) { return x == null ? "" : String(Math.round(x * 10) / 10); }
-    function pct(x) { return x == null ? "" : String(Math.round(x * 100)); }
-    function signed(x) { return x == null ? "" : (x > 0 ? "+" : (x < 0 ? "−" : "±")) + String(Math.abs(Math.round(x * 10) / 10)); }
-    return {
-      v: r1(num), pct: pct(num), med: r1(med), medPct: pct(med),
-      deg: signed(num), absdeg: r1(num == null ? null : Math.abs(num)), ms: num == null ? "" : String(Math.round(num)),
-      medMs: med == null ? "" : String(Math.round(med)),
-      count: num == null ? "" : String(Math.round(num)), ratio: r1(num),
-      state: v && v.state ? v.state : "", dir: (num != null && med != null) ? (num > med ? "high" : (num < med ? "low" : "mid")) : "mid"
-    };
+  /* ========== 測定値の文面（content.js section 5 の表どおりに選ぶ） ========== */
+  function cf(fk) { return (CAL && CAL.features && CAL.features[fk]) || {}; }
+  function r1(x) { return String(Math.round(x * 10) / 10); }
+  function r2(x) { return (Math.round(x * 100) / 100).toFixed(2); }
+  function pct(x) { return String(Math.round(x * 100)); }
+  function stopCounts(marks) {
+    var st = (marks && marks.stops) || [], n = 0;
+    for (var i = 0; i < st.length; i++) { if (st[i] && st[i].stop === true) { n++; } }
+    return { stops: n, total: st.length };
   }
-  function measureLine(fk, feats) {
-    var def = FT[fk] || {};
+  /* ctx: {twoPass, marks} … 自分の結果（src "self"）のとき */
+  function rowSelf(fk, feats, ctx) {
+    var def = FT[fk];
     var v = feats[fk];
-    var tk = tokensFor(fk, feats);
-    var m = def.measure;
-    if (m && typeof m === "object") {
-      m = (v && v.state && m[v.state]) || m[tk.dir] || m["default"] || "";
+    if (!def || v == null) { return null; }
+    var m = def.measure || {}, b = def.brief || {}, key = null, tk = {};
+    var med = cf(fk).median;
+    switch (fk) {
+      case "f1": case "f9": case "f10":
+        if (!v.state) { return null; }
+        tk.ratio = r2(v.ratio);
+        key = (v.state === "closed" && tk.ratio === "0.00" && m.closedTouch) ? "closedTouch" : v.state;
+        break;
+      case "f2":
+        tk.medPct = pct(med); tk.pct = pct(v); tk.absPct = pct(Math.abs(v));
+        key = v < 0 ? "overlap" : "value";
+        break;
+      case "f3": case "f6":
+        tk.v = r1(v); tk.med = r1(med); key = "value";
+        break;
+      case "f4":
+        tk.count = String(v); key = v > 0 ? "joined" : "separate";
+        break;
+      case "f5":
+        var sc = stopCounts(ctx.marks);
+        if (!sc.total) { return null; }
+        tk.stops = String(sc.stops); tk.total = String(sc.total);
+        tk.ms = String(Math.round(v)); tk.medMs = String(Math.round(med));
+        key = (sc.stops > 0 ? "value" : "valueNone") + (sc.total === 1 ? "1" : "") + (ctx.twoPass ? "Two" : "");
+        return { fk: fk, measure: fill(m[key], tk), brief: fill(b[sc.stops > 0 ? "value" : "valueNone"], tk) };
+      case "f7":
+        tk.hw = r2(v + TPL.ratio); tk.medHw = r2(med + TPL.ratio);
+        key = tk.hw === tk.medHw ? "even" : (parseFloat(tk.hw) > parseFloat(tk.medHw) ? "tall" : "wide");
+        break;
+      case "f8":
+        tk.pct = pct(v); tk.medPct = pct(med); key = "value";
+        break;
+      case "f11":
+        if (!v.state) { return null; }
+        key = v.state;
+        break;
+      case "f12":
+        tk.absdeg = String(Math.abs(Math.round(v * 2) / 2));
+        key = Math.abs(v) <= 0.5 ? "flat" : (v > 0 ? "up" : "down");
+        break;
+      case "f13":
+        var p = Math.round((v + TPL.f13) * 100);
+        tk.protPct = String(p); tk.medProtPct = String(Math.round((med + TPL.f13) * 100));
+        key = p <= 0 ? "flat" : "value";
+        break;
+      default:
+        return null;
     }
-    return fill(m, tk);
+    if (!m[key]) { return null; }
+    return { fk: fk, measure: fill(m[key], tk), brief: fill(b[key] || "", tk) };
   }
-  function readingLine(fk, feats) {
-    var def = FT[fk] || {};
-    var rd = def.reading;
-    var v = feats[fk];
-    if (rd && typeof rd === "object") {
-      var tk = tokensFor(fk, feats);
-      rd = (v && v.state && rd[v.state]) || rd[tk.dir] || rd["default"] || "";
+  /* リンク・再読み込みの表示（書いた線も特徴量も無く、decodeShare の disp だけが分かるとき） */
+  function rowLink(fk, dec) {
+    var def = FT[fk];
+    if (!def || !dec || !dec.disp) { return null; }
+    var d = dec.disp, m = def.measure || {}, b = def.brief || {};
+    if (fk === "f1" && d.f1) {
+      return { fk: fk, measure: b[d.f1] || "", brief: b[d.f1] || "" };
     }
-    return rd || "";
+    if (fk === "f2" && d.f2 !== null && d.f2 !== undefined) {
+      var tk = { pct: String(d.f2), absPct: String(Math.abs(d.f2)), medPct: pct(cf("f2").median) };
+      var k = d.f2 < 0 ? "overlap" : "value";
+      return { fk: fk, measure: fill(m[k], tk), brief: fill(b[k], tk) };
+    }
+    if (fk === "f5" && d.f5 !== null && d.f5 !== undefined) {
+      var t5 = { stops: String(d.f5) };
+      var k5 = d.f5 > 0 ? "link" : "linkNone";
+      return { fk: fk, measure: fill(m[k5], t5), brief: fill(b[k5], t5) };
+    }
+    return null;
   }
-  function featureAvailable(fk, feats) {
-    var v = feats[fk];
-    if (v == null) { return false; }
-    if (typeof v === "object" && "state" in v && v.state == null) { return false; }
-    return true;
-  }
+
   var USED = ["f1", "f2", "f3", "f4", "f5", "f6", "f7", "f8"];
   var REF = ["f9", "f10", "f11", "f12", "f13"];
-
-  function measureRows(list, feats, label) {
-    return list.filter(function (fk) { return FT[fk] && featureAvailable(fk, feats); }).map(function (fk) {
-      return '<li class="m-row" data-f="' + fk + '">' +
-        '<p class="m-name">' + esc(FT[fk].name) + ' <span class="m-use">' + esc(label) + "</span></p>" +
-        '<p class="m-val">' + esc(measureLine(fk, feats)) + "</p>" +
-        '<p class="m-read">' + esc(readingLine(fk, feats)) + "</p>" +
-      "</li>";
-    }).join("");
+  function rowHtml(row, label) {
+    var def = FT[row.fk];
+    return '<li class="m-row" data-f="' + row.fk + '">' +
+      '<p class="m-name">' + esc(def.name) + (label ? ' <span class="m-use">' + esc(label) + "</span>" : "") + "</p>" +
+      '<p class="m-val">' + esc(row.measure) + "</p>" +
+      (def.reading ? '<p class="m-read">' + esc(def.reading) + "</p>" : "") +
+    "</li>";
+  }
+  function shortOf(row) {
+    if (!row || !row.brief) { return ""; }
+    return fill(SH.measureTemplate || "{short}：{brief}", { short: FT[row.fk].short || FT[row.fk].name, brief: row.brief });
+  }
+  function joinMeasures(list, withEnd) {
+    var xs = list.filter(function (s) { return !!s; });
+    if (!xs.length) { return ""; }
+    return xs.join(SH.measuresSeparator || "／") + (withEnd ? (SH.measuresEnd || "。") : "");
   }
 
   /* 本人の字を、正規化座標から描き直します。画像として外に出すことはありません。 */
@@ -322,7 +381,7 @@
     if (marks) {
       if (marks.gap) {
         mk += '<rect class="mk mk-gap" x="' + (marks.gap.x0 * W).toFixed(1) + '" y="' + (marks.gap.y0 * W).toFixed(1) +
-          '" width="' + Math.max(2, (marks.gap.x1 - marks.gap.x0) * W).toFixed(1) + '" height="' + ((marks.gap.y1 - marks.gap.y0) * W).toFixed(1) + '"/>';
+          '" width="' + Math.max(2, (marks.gap.x1 - marks.gap.x0) * W).toFixed(1) + '" height="' + Math.max(2, (marks.gap.y1 - marks.gap.y0) * W).toFixed(1) + '"/>';
       }
       mk += circ(marks.kouUL, "mk-ul") + circ(marks.kouLL, "mk-ll") + circ(marks.kouLR, "mk-lr");
       if (marks.slant && marks.slant.length === 2) {
@@ -333,210 +392,268 @@
         mk += '<circle class="mk ' + (s.stop ? "mk-stop" : "mk-flow") + '" cx="' + (s.x * W).toFixed(1) + '" cy="' + (s.y * W).toFixed(1) + '" r="4"/>';
       });
     }
-    return '<svg class="yui-ink" viewBox="0 0 ' + W + " " + W + '" role="img" aria-label="' + esc(RS.panelAria || "あなたが書いた「結」") + '">' +
+    return '<svg class="yui-ink" viewBox="0 0 ' + W + " " + W + '" role="img" aria-label="' + esc(RS.panelAria || "") + '">' +
       '<rect x="30" y="30" width="240" height="240" class="guide"/>' + paths + mk + "</svg>";
   }
 
-  function usedNames(scored) {
-    var names = (scored.used || []).map(function (fk) { return FT[fk] ? FT[fk].name : null; }).filter(Boolean);
-    return names.join("／");
-  }
-
   function mapPoint(scored) {
+    var sc = (CAL && CAL.axisScale) || { x: 0.5, y: 0.5 };
     var cx = (CAL && CAL.center) ? CAL.center.x : 0, cy = (CAL && CAL.center) ? CAL.center.y : 0;
-    /* 軸の値はおおむね -1〜1。境界の近さが見えるよう、そのまま百分率に写します。 */
-    return { X: Math.round(Y.clamp((scored.x - cx) * 100, -100, 100)), Y: Math.round(Y.clamp((scored.y - cy) * 100, -100, 100)) };
+    /* 中心からのずれを、軸のばらつき（axisScale）2つ分で端に届くよう写します。境目の近さが目で分かるように。 */
+    return {
+      X: Math.round(Y.clamp((scored.x - cx) / (2 * (sc.x || 0.5)) * 100, -100, 100)),
+      Y: Math.round(Y.clamp((scored.y - cy) / (2 * (sc.y || 0.5)) * 100, -100, 100))
+    };
   }
   function approxPoint(key, lean) {
     var sx = (key === "kyomei" || key === "chokkan") ? 1 : -1;
     var sy = (key === "suishin" || key === "chokkan") ? 1 : -1;
     return { X: sx * (lean && lean.x ? 12 : 45), Y: sy * (lean && lean.y ? 12 : 45) };
   }
+  function isLean(l) { return !!(l && (l.x || l.y) && l.toward && Y.typeOf(l.toward)); }
 
-  function typeLabel(t, scored) {
-    if (scored && scored.lean && scored.lean.toward) {
-      var to = Y.typeOf(scored.lean.toward);
-      if (to && RS.leanTemplate) { return fill(RS.leanTemplate, { type: t.name, toward: to.name }); }
-    }
-    return t.name;
+  function themeFor(hl) {
+    if (!hl) { return null; }
+    var d = TD[hl.feature];
+    if (!d || !TH[d.element]) { return null; }
+    var th = TH[d.element][hl.sign > 0 ? d.high : d.low];
+    return th ? { element: d.element, label: (RS.elements || {})[d.element] || d.element, live: th.live, next: th.next } : null;
   }
 
-  /* 共有・再読み込み用の短い値から、表示できる測定値だけを文にします。 */
-  function sharedMeasureRows(dec) {
-    var rows = "";
-    (dec.items || []).forEach(function (it) {
-      var fk = it.feature;
-      if (!FT[fk]) { return; }
-      var fake = {};
-      if (it.state) { fake[fk] = { state: it.state }; }
-      else { fake[fk] = it.value; }
-      rows += '<li class="m-row" data-f="' + fk + '">' +
-        '<p class="m-name">' + esc(FT[fk].name) + "</p>" +
-        '<p class="m-val">' + esc(measureLine(fk, fake)) + "</p>" +
-        '<p class="m-read">' + esc(readingLine(fk, fake)) + "</p></li>";
-    });
-    return rows;
-  }
-
+  /* ========== 結果 ========== */
   function render(view) {
-    /* view: {src:"self"|"reload"|"shared", key, scored?, feats?, marks?, strokes?, dec?} */
+    /* view: {src:"self"|"reload"|"shared", key, scored?, feats?, strokes?, marks?, dec?} */
     var t = Y.typeOf(view.key);
     if (!t) { nv.replaceHash("#/"); screen("intro"); return; }
+    var self = view.src === "self", shared = view.src === "shared";
     var host = $("result");
     Y.applyTypeColor(host, t);
-    var scored = view.scored || (view.dec ? { key: view.key, lean: view.dec.lean, highlight: view.dec.highlight, used: USED } : null);
-    var feats = view.feats || null;
-    var pt = feats ? mapPoint(scored) : approxPoint(view.key, scored && scored.lean);
-    var label = typeLabel(t, scored);
-    var hl = scored && scored.highlight;
-    var theme = hl && TH[hl.element] ? TH[hl.element][hl.sign >= 0 ? "pos" : "neg"] : null;
-    var measure1 = "", measure2 = "";
+    var lean = self ? view.scored.lean : (view.dec ? view.dec.lean : null);
+    var hl = self ? view.scored.highlight : (view.dec ? view.dec.highlight : null);
+    var twoPass = self && !!(S.a1 && S.a2);
+    var toward = isLean(lean) ? Y.typeOf(lean.toward) : null;
+    var label = toward ? fill(RS.leanTemplate, { type: t.name, toward: toward.name }) : t.name;
 
-    var sharedBar = view.src === "shared"
-      ? '<div class="shared-bar"><p>' + esc(RS.sharedBanner || C.share.sharedBanner) + "</p>" +
-        '<button class="btn" id="own" type="button">' + esc(RS.sharedBannerButton || IN.startButton) + "</button></div>"
-      : "";
-
-    var panel;
-    if (feats && view.strokes) {
-      var rowsUsed = measureRows(USED, feats, RS.usedLabel || "タイプ判定に使用");
-      var rowsRef = measureRows(REF, feats, RS.refLabel || "参考表示のみ");
-      measure1 = hl && FT[hl.feature] ? FT[hl.feature].name + "：" + measureLine(hl.feature, feats) : "";
-      measure2 = FT.f1 && featureAvailable("f1", feats) ? FT.f1.name + "：" + measureLine("f1", feats) : "";
-      panel =
-        '<div class="ink-panel">' +
-          '<h2 class="sec">' + esc(RS.panelTitle) + "</h2>" +
-          '<div class="ink-wrap">' + strokesSvg(view.strokes, view.marks) + "</div>" +
-          '<p class="note">' + esc(RS.panelNote) + "</p>" +
-          '<ul class="m-list">' + rowsUsed + "</ul>" +
-          (rowsRef ? '<details class="m-more"><summary>' + esc(RS.refSummary || "参考として測ったところ") + '</summary><ul class="m-list">' + rowsRef + "</ul></details>" : "") +
-          (RS.calibrationNote ? '<p class="note">' + esc(RS.calibrationNote) + "</p>" : "") +
-        "</div>";
+    /* --- 測定値の行 --- */
+    var rows = [], refRows = [], rowBy = {};
+    if (self) {
+      var rc = { twoPass: twoPass, marks: view.marks };
+      USED.forEach(function (fk) { var r = rowSelf(fk, view.feats, rc); if (r) { rows.push(r); rowBy[fk] = r; } });
+      REF.forEach(function (fk) { var r = rowSelf(fk, view.feats, rc); if (r) { refRows.push(r); rowBy[fk] = r; } });
     } else {
-      var rows = view.dec ? sharedMeasureRows(view.dec) : "";
-      panel =
-        '<div class="ink-panel">' +
-          '<h2 class="sec">' + esc(RS.panelTitle) + "</h2>" +
-          '<p class="note">' + esc(RS.sharedPanelNote) + "</p>" +
-          (rows ? '<ul class="m-list">' + rows + "</ul>" : "") +
-        "</div>";
-      if (view.dec && view.dec.items && view.dec.items.length) {
-        var it0 = view.dec.items[0], f0 = {};
-        f0[it0.feature] = it0.state ? { state: it0.state } : it0.value;
-        measure1 = FT[it0.feature] ? FT[it0.feature].name + "：" + measureLine(it0.feature, f0) : "";
-      }
+      ["f1", "f2", "f5"].forEach(function (fk) { var r = rowLink(fk, view.dec); if (r) { rows.push(r); rowBy[fk] = r; } });
     }
 
-    var changed = (view.src === "self" && S.current && S.current.prevKey && Y.typeOf(S.current.prevKey))
-      ? '<p class="changed-note">' + esc(fill(RS.changedTemplate, { prev: Y.typeOf(S.current.prevKey).name, now: t.name })) + "</p>"
-      : "";
+    /* --- R07：採点に実際に使った特徴の名前（リンク表示では使った特徴の記録が無いので Link 版） --- */
+    var r07 = self
+      ? fill(RS.r07Template, { features: (view.scored.used || []).map(function (fk) { return FT[fk] ? FT[fk].name : ""; }).filter(Boolean).join("／") })
+      : RS.r07TemplateLink;
 
-    var highlight = (hl && FT[hl.feature] && theme)
-      ? '<div class="hl">' +
-          '<h2 class="sec">' + esc(RS.highlightHeading) + "</h2>" +
-          '<p class="hl-feature">' + esc(FT[hl.feature].name) + (feats ? "　" + esc(measureLine(hl.feature, feats)) : "") + "</p>" +
-          '<h3 class="sub3">' + esc(RS.liveHeading) + "</h3><p>" + esc(theme.live) + "</p>" +
-          '<h3 class="sub3">' + esc(RS.themeHeading) + "</h3><p>" + esc(theme.next) + "</p>" +
-        "</div>"
-      : "";
+    /* --- いちばん特徴が出ていたところ --- */
+    var theme = themeFor(hl), hlText = "";
+    if (hl && theme && FT[hl.feature]) {
+      var hlMeasure = null;
+      if (self && rowBy[hl.feature]) { hlMeasure = rowBy[hl.feature].measure; }
+      else if (!self) {
+        if (hl.feature === "f2" || hl.feature === "f5") { hlMeasure = rowBy[hl.feature] ? rowBy[hl.feature].measure : null; }
+        else if (hl.feature === "f9" || hl.feature === "f10") { hlMeasure = (FT[hl.feature].brief || {}).open || null; }
+      }
+      hlText = hlMeasure
+        ? fill(self ? RS.highlightTemplate : (RS.highlightTemplate), { feature: FT[hl.feature].name, measure: hlMeasure, element: theme.label })
+        : fill(RS.highlightTemplateLink, { feature: FT[hl.feature].name, element: theme.label });
+    }
 
-    var shareText = fill(C.share.textTemplate, { type: t.name, m1: measure1, m2: measure2 }).replace(/\s*[／/]\s*$/, "");
-    var typeUrl = Y.siteBase() + "/t/" + Y.safeKey(t.key) + ".html";
-    var share = Y.shareBlock({ text: shareText, url: typeUrl });
+    /* --- シェア文の測定値（m1＝いちばん特徴の行、m2＝口の左上） --- */
+    var m1 = "", m2 = "";
+    if (hl && hl.feature !== "f1") {
+      if (self) { m1 = shortOf(rowBy[hl.feature]); }
+      else if (hl.feature === "f2" || hl.feature === "f5") { m1 = shortOf(rowBy[hl.feature]); }
+      else if (hl.feature === "f9" || hl.feature === "f10") { m1 = shortOf({ fk: hl.feature, brief: (FT[hl.feature].brief || {}).open }); }
+    }
+    m2 = shortOf(rowBy.f1);
+    var measuresShare = joinMeasures([m1, m2], true);
+    var measuresImage = joinMeasures([m1, m2], false);
+
+    /* --- 組み立て（content.js section 4 の順序） --- */
+    var parts = [];
+    if (shared) {
+      parts.push('<div class="shared-bar"><p>' + esc(RS.sharedBanner) + "</p>" +
+        '<button class="btn" id="own" type="button">' + esc(RS.sharedBannerButton) + "</button>" +
+        '<p class="alt-path"><a href="q.html">' + esc(IN.altLink) + "</a></p></div>");
+    }
+    parts.push('<p class="kicker">' + esc(shared ? RS.sharedKicker : RS.kicker) + "</p>");
+    parts.push('<div class="r-head"><div class="seal" aria-hidden="true">結</div>' +
+      '<div><h1 class="r-name" id="r-name" tabindex="-1">' + esc(label) + "</h1></div></div>");
+    parts.push('<p class="r07">' + esc(r07) + "</p>");
+    parts.push('<p class="r08">' + esc(RS.r08) + "</p>");
+    parts.push('<p class="r-tag">' + esc(t.tagline) + "</p>");
+    parts.push('<p class="r-catch">' + esc(t.catch) + "</p>");
+    if (self && S.current && S.current.prevKey && Y.typeOf(S.current.prevKey)) {
+      parts.push('<p class="changed-note">' + esc(fill(isLean(lean) ? RS.changedTemplate : RS.changedTemplateFar,
+        { prev: Y.typeOf(S.current.prevKey).name, now: t.name })) + "</p>");
+    }
+
+    var calNote = (CAL && /^synthetic/.test(String(CAL.version || "")))
+      ? RS.calibrationNote
+      : fill(RS.medianSourceTemplate, { n: CAL && CAL.n, date: CAL && CAL.date });
+    var panel = '<div class="ink-panel"><h2 class="sec">' + esc(shared ? RS.sharedPanelTitle : RS.panelTitle) + "</h2>";
+    if (self) {
+      panel += '<div class="ink-wrap">' + strokesSvg(view.strokes, view.marks) + "</div>" +
+        '<p class="note">' + esc(RS.panelNote) + "</p>" +
+        (twoPass ? '<p class="note">' + esc(RS.panelNoteTwoPass) + "</p>" : "") +
+        (calNote ? '<p class="note cal-note">' + esc(calNote) + "</p>" : "") +
+        '<ul class="m-list">' + rows.map(function (r) { return rowHtml(r, RS.usedLabel); }).join("") + "</ul>" +
+        (refRows.length ? '<details class="m-more"><summary>' + esc(RS.refSummary) + '</summary><ul class="m-list">' +
+          refRows.map(function (r) { return rowHtml(r, RS.refLabel); }).join("") + "</ul></details>" : "");
+    } else {
+      panel += '<p class="note">' + esc(shared ? RS.sharedPanelNote : RS.reloadPanelNote) + "</p>" +
+        (rows.length && calNote ? '<p class="note cal-note">' + esc(calNote) + "</p>" : "") +
+        (rows.length ? '<ul class="m-list">' + rows.map(function (r) { return rowHtml(r, ""); }).join("") + "</ul>" : "");
+    }
+    panel += "</div>";
+    parts.push(panel);
+
+    var pt = self ? mapPoint(view.scored) : approxPoint(view.key, lean);
+    var ariaTpl = shared ? (toward ? RS.mapAriaLeanShared : RS.mapAriaShared) : (toward ? RS.mapAriaLean : RS.mapAria);
+    parts.push('<div class="map-wrap">' + Y.axisMap(pt.X, pt.Y, t.key, {
+      aria: fill(ariaTpl, { type: t.name, toward: toward ? toward.name : "" }),
+      top: RS.mapAxes && RS.mapAxes.top, bottom: RS.mapAxes && RS.mapAxes.bottom,
+      left: RS.mapAxes && RS.mapAxes.left, right: RS.mapAxes && RS.mapAxes.right }) + "</div>");
+    parts.push('<p class="not-used">' + esc(RS.notUsed) + "</p>");
+
+    /* 婚活での生かし方 */
+    var live = "";
+    if (t.live) { live += '<h2 class="sec">' + esc(RS.liveHeading) + "</h2><p>" + esc(t.live) + "</p>"; }
+    if (theme && hlText) {
+      live += '<div class="hl"><h2 class="sec">' + esc(shared ? RS.sharedHighlightHeading : RS.highlightHeading) + "</h2>" +
+        '<p class="hl-feature">' + esc(hlText) + "</p>" +
+        "<p>" + esc(theme.live) + "</p>" +
+        '<h3 class="sub3">' + esc(RS.themeHeading) + "</h3><p>" + esc(theme.next) + "</p></div>";
+    }
+    parts.push(live);
+    parts.push(Y.typeSections(t, { basis: true }));
+
     var cta = Y.ctaBlocks({
-      t: t,
-      src: view.src,
-      biz: view.src === "self" && S.qualify >= 0 ? !!C.qualify.options[S.qualify].biz : (view.src === "shared" ? false : null),
+      t: t, src: view.src, noComment: shared,
+      biz: self && S.qualify >= 0 ? !!C.qualify.options[S.qualify].biz : (shared ? false : null),
       commentLine: t.name + "でした",
-      dmLine: fill(C.cta.dmLineTemplate || "{type}と出ました。無料相談の話を聞かせてください。", { type: t.name })
+      dmLine: fill(C.cta.dmLineTemplate, { type: t.name })
     });
+    parts.push(cta.html.comment + cta.html.biz + cta.html.line);
 
-    var second = (view.src === "self" && S.a1 && !S.a2)
-      ? '<div class="second"><p>' + esc(WR.secondPrompt) + "</p>" +
-        '<button class="btn btn-ghost" id="write-2" type="button">' + esc(WR.secondYes) + "</button></div>"
-      : "";
-    var saveImg = (view.src === "self" && view.strokes)
-      ? '<div class="save-img"><button class="btn btn-ghost" id="save-img" type="button">' + esc(RS.saveImage) + "</button>" +
-        '<p class="note">' + esc(RS.saveImageNote) + '</p><div id="save-img-host"></div></div>'
-      : "";
+    var share = null;
+    if (!shared) {
+      share = Y.shareBlock({
+        text: fill(SH.textTemplate, { type: t.name, measures: measuresShare }),
+        url: Y.siteBase() + "/t/" + Y.safeKey(t.key) + ".html"
+      });
+      parts.push(share.html);
+    }
+    if (self && view.strokes) {
+      parts.push('<div class="save-img"><button class="btn btn-ghost" id="save-img" type="button">' + esc(RS.saveImage) + "</button>" +
+        '<p class="note">' + esc(RS.saveImageNote) + '</p><div id="save-img-host"></div></div>');
+    }
+    if (self && S.a1 && !S.a2) {
+      parts.push('<div class="second"><p>' + esc(WR.secondPrompt) + "</p>" +
+        '<button class="btn btn-ghost" id="write-2" type="button">' + esc(WR.secondYes) + "</button></div>");
+    }
+    parts.push('<div class="again">' +
+      '<button class="btn" id="retake" type="button">' + esc(shared ? RS.sharedBannerButton : RS.retake) + "</button>" +
+      '<a class="btn btn-ghost" id="to-quiz" href="q.html">' + esc(RS.toQuiz) + "</a>" +
+      (!shared && readLast() ? '<button class="btn btn-ghost" id="forget" type="button">' + esc(RS.forgetPrevious) + "</button>" : "") +
+    "</div>");
+    parts.push('<p class="about-link"><a href="about.html">' + esc(RS.aboutLink) + "</a></p>");
+    if (COLLECT && self) { parts.push(collectPanel(view)); }
 
-    host.innerHTML = sharedBar +
-      '<p class="kicker">' + esc(RS.kicker) + "</p>" +
-      Y.typeHeader(t, { label: label }) +
-      '<p class="r07">' + esc(fill(RS.r07Template, { features: usedNames(scored) || "" })) + "</p>" +
-      '<p class="r08">' + esc(RS.r08) + "</p>" +
-      changed +
-      panel +
-      '<div class="map-wrap">' + Y.axisMap(pt.X, pt.Y, t.key, {
-        aria: RS.mapAria, top: RS.mapAxes && RS.mapAxes.top, bottom: RS.mapAxes && RS.mapAxes.bottom,
-        left: RS.mapAxes && RS.mapAxes.left, right: RS.mapAxes && RS.mapAxes.right }) + "</div>" +
-      cta.html.comment +
-      highlight +
-      (t.live ? '<h2 class="sec">' + esc(RS.liveHeading) + "</h2><p>" + esc(t.live) + "</p>" : "") +
-      Y.typeSections(t) +
-      '<p class="not-used">' + esc(RS.notUsed) + "</p>" +
-      second +
-      share.html +
-      saveImg +
-      cta.html.biz + cta.html.line +
-      '<div class="again">' +
-        '<button class="btn" id="retake" type="button">' + esc(RS.retake) + "</button>" +
-        '<a class="btn btn-ghost" id="to-quiz" href="q.html">' + esc(RS.toQuiz) + "</a>" +
-      "</div>" +
-      '<p class="about-link"><a href="about.html">' + esc(RS.aboutLink) + "</a></p>";
-
+    host.innerHTML = parts.join("");
     screen("result");
     host.classList.remove("fade");
     void host.offsetWidth;
     host.classList.add("fade");
     window.scrollTo(0, 0);
     try { $("r-name").focus({ preventScroll: true }); } catch (e) {}
-    document.title = t.name + " ｜「結」の書き方診断";
+    document.title = t.name + " ｜" + (C.title || "「結」の書き方診断");
 
     cta.bind();
-    share.bind();
-    Y.on("retake", function () { restart(); });
-    Y.on("own", function () { restart(); });
+    if (share) { share.bind(); }
+    Y.on("retake", restart);
+    Y.on("own", function () { location.hash = ""; restart(); });
     Y.on("write-2", function () { nv.nav("#/write2"); });
-    Y.on("save-img", function () { makeImage(t, view.strokes, [measure1, measure2]); });
+    Y.on("forget", function () {
+      Y.store.del(LKEY);
+      Y.toast(RS.forgetDone);
+      var b = $("forget");
+      if (b && b.parentNode) { b.parentNode.removeChild(b); }
+    });
+    Y.on("save-img", function () { makeImage(t, view.strokes, measuresImage); });
+    Y.on("collect-copy", function () { Y.copyText($("collect-json").textContent, CO.copied); });
   }
 
-  /* 画像は、本人がボタンを押したときだけ、この端末の中で作ります。 */
-  function makeImage(t, strokes, lines) {
+  /* 較正モード（?collect=1 のときだけ）。特徴量の値だけを出します。線の座標や時刻は入れません。 */
+  function collectPanel(view) {
+    var data = {
+      engine: HW.VERSION, twoPass: !!(S.a1 && S.a2), key: view.scored.key,
+      x: Math.round(view.scored.x * 1000) / 1000, y: Math.round(view.scored.y * 1000) / 1000,
+      writings: [S.a1, S.a2].filter(Boolean).map(function (a) { return { feats: a.feats, nStrokes: a.nStrokes }; })
+    };
+    return '<div class="collect cta"><h2>' + esc(CO.heading) + "</h2>" +
+      "<p>" + esc(CO.consent) + "</p>" +
+      '<p class="note">' + esc(CO.contents) + "</p>" +
+      (CO.steps && CO.steps.length ? "<ol>" + CO.steps.map(function (s) { return "<li>" + esc(s) + "</li>"; }).join("") + "</ol>" : "") +
+      (CO.attributes ? '<p class="note">' + esc(CO.attributes) + "</p>" : "") +
+      '<pre class="collect-json" id="collect-json">' + esc(JSON.stringify(data)) + "</pre>" +
+      '<button class="btn btn-ghost" id="collect-copy" type="button">' + esc(CO.copyButton) + "</button></div>";
+  }
+
+  /* 画像は、本人がボタンを押したときだけ、この端末の中で作ってページに置きます。
+     アプリ内ブラウザではダウンロードを始められないので、保存は長押しで行ってもらいます。 */
+  function makeImage(t, strokes, measures) {
     var hostEl = $("save-img-host");
     if (!hostEl) { return; }
+    var TX = RS.saveImageText || {};
     var W = 1080, Hh = 1350;
     var c = document.createElement("canvas");
     c.width = W; c.height = Hh;
     var g = c.getContext("2d");
     if (!g) { return; }
-    var paper = "#f7f4ee", ink = "#171b21", accent = Y.safeHex(t.color, "#c8453c");
-    g.fillStyle = paper; g.fillRect(0, 0, W, Hh);
+    var ink = "#171b21", accent = Y.safeHex(t.color, "#c8453c");
+    g.fillStyle = "#f7f4ee"; g.fillRect(0, 0, W, Hh);
+    g.textAlign = "center";
+    g.fillStyle = "#454b56";
+    g.font = "400 34px 'Hiragino Sans','Noto Sans JP',sans-serif";
+    if (TX.title) { g.fillText(TX.title, W / 2, 110); }
     g.strokeStyle = "rgba(23,27,33,.18)"; g.setLineDash([10, 12]); g.lineWidth = 3;
-    g.strokeRect(190, 150, 700, 700);
+    g.strokeRect(190, 160, 700, 700);
     g.setLineDash([]);
     g.strokeStyle = ink; g.lineCap = "round"; g.lineJoin = "round"; g.lineWidth = 22;
     (strokes || []).forEach(function (st) {
       var p = st.points; if (!p.length) { return; }
       g.beginPath();
-      g.moveTo(190 + p[0].x * 700, 150 + p[0].y * 700);
-      for (var i = 1; i < p.length; i++) { g.lineTo(190 + p[i].x * 700, 150 + p[i].y * 700); }
+      g.moveTo(190 + p[0].x * 700, 160 + p[0].y * 700);
+      for (var i = 1; i < p.length; i++) { g.lineTo(190 + p[i].x * 700, 160 + p[i].y * 700); }
       g.stroke();
     });
+    var line = fill(TX.line || "{type}", { type: t.name, measures: measures }).replace(/[\s　]+$/, "");
+    var head = line.split(/[\s　]/)[0], rest = line.slice(head.length).replace(/^[\s　]+/, "");
     g.fillStyle = accent;
     g.font = "700 76px 'Hiragino Mincho ProN','Yu Mincho',serif";
-    g.textAlign = "center";
-    g.fillText(t.name, W / 2, 985);
-    g.fillStyle = "#454b56";
-    g.font = "400 34px 'Hiragino Sans','Noto Sans JP',sans-serif";
-    lines.filter(Boolean).slice(0, 2).forEach(function (l, i) { g.fillText(String(l).slice(0, 30), W / 2, 1060 + i * 52); });
-    g.fillStyle = "#666e7c";
-    g.font = "400 28px 'Hiragino Sans','Noto Sans JP',sans-serif";
-    g.fillText("「結」の書き方診断 ／ 結婚相談所AGOEN", W / 2, 1270);
+    g.fillText(head, W / 2, 1000);
+    if (rest) {
+      g.fillStyle = "#454b56";
+      g.font = "400 32px 'Hiragino Sans','Noto Sans JP',sans-serif";
+      var parts = rest.split(SH.measuresSeparator || "／");
+      parts.slice(0, 2).forEach(function (l, i) { g.fillText(String(l).slice(0, 30), W / 2, 1075 + i * 50); });
+    }
+    if (TX.foot) {
+      g.fillStyle = "#666e7c";
+      g.font = "400 28px 'Hiragino Sans','Noto Sans JP',sans-serif";
+      g.fillText(TX.foot, W / 2, 1280);
+    }
     var url = "";
     try { url = c.toDataURL("image/png"); } catch (e) { url = ""; }
     if (!url) { return; }
-    hostEl.innerHTML = '<img class="save-img-out" alt="' + esc(t.name + "の画像") + '" src="' + url + '">';
+    hostEl.innerHTML = '<img class="save-img-out" alt="' + esc(t.name) + '" src="' + url + '">' +
+      (RS.saveImageReady ? '<p class="note">' + esc(RS.saveImageReady) + "</p>" : "");
   }
 
   function restart() {
@@ -555,10 +672,9 @@
     var m = h.match(/^#\/r\/([A-Za-z0-9._~-]{1,64})$/);
     if (m) {
       var code = m[1];
-      if (S.current && S.current.code === code) {
-        var a = S.a2 || S.a1;
+      if (S.current && (S.current.code === code || (code === "self" && !S.current.code))) {
         render({ src: "self", key: S.current.key, scored: S.current.scored, feats: S.current.feats,
-                 strokes: S.a2 ? S.s2 : S.s1, marks: a ? a.marks : null });
+                 strokes: S.a2 ? S.s2 : S.s1, marks: drawnMarks() });
         return;
       }
       var dec = null;
@@ -569,7 +685,7 @@
       return;
     }
     screen("intro");
-    document.title = (C.title || "「結」の書き方診断") + " ｜ " + (IN.catch || "");
+    document.title = (C.meta && C.meta.title) || C.title;
     window.scrollTo(0, 0);
   }
   window.addEventListener("hashchange", route);

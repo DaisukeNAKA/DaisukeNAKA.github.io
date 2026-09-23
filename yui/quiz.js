@@ -213,65 +213,92 @@
   /* history.back() に頼ると、アプリ内ブラウザがページを再生成したときにサイト外へ出てしまいます。 */
   Y.on("q-back", function () { nv.nav(idx > 0 ? ("#/q/" + idx) : "#/gate"); });
 
-  /* ========== 結果 ========== */
+  /* ========== 結果 ==========
+     content.js section 14 の順序と差し替えに従います。手書き版の文言のうち「書いた字」を前提にしたもの
+     （r07・r08・kicker・sharedBanner・basis・share.body・textTemplate・highlight*・mapAriaLean*）は使いません。 */
+  var IN = (C.hw && C.hw.intro) || {};
+  var TD = ((C.hw && C.hw.themeDirection) || {}).quiz || {};
   function renderResult(src, data) {
     for (var i = 0; i < TOTAL_A; i++) {
       if (data[i] < 0 || data[i] > 3) { nv.replaceHash("#/"); screen("intro"); return; }
     }
+    var shared = src === "shared";
     var r = score(data);
     var t = Y.typeOf(r.key);
     var host = $("result");
     Y.applyTypeColor(host, t);
-    var theme = TH[r.weakest] ? TH[r.weakest].neg : null;
-    var shareText = fill(C.share.quizTextTemplate || C.share.textTemplate, { type: t.name, m1: "", m2: "" })
-      .replace(/\s*[／/]\s*$/, "").replace(/（\s*）/g, "");
-    var typeUrl = Y.siteBase() + "/t/" + Y.safeKey(t.key) + ".html";
-    var share = Y.shareBlock({ text: shareText, url: typeUrl });
+    var el = r.weakest, dir = TD[el];
+    var theme = (TH[el] && dir && TH[el][dir]) ? TH[el][dir] : null;
+    var elLabel = (RS.elements && RS.elements[el]) || "";
+
+    var parts = [];
+    if (shared) {
+      /* 主ボタンは手書き版へ。書きたくない方のために、その横に R06 の経路を置きます。 */
+      parts.push('<div class="shared-bar"><p>' + esc(QC.sharedBanner) + "</p>" +
+        '<a class="btn" id="own-hw" href="index.html">' + esc(QC.sharedBannerButton) + "</a>" +
+        '<p class="alt-path"><a id="own" href="q.html">' + esc(IN.altLink) + "</a></p></div>");
+    }
+    parts.push('<p class="kicker">' + esc(QC.resultKicker) + "</p>");
+    parts.push('<div class="r-head"><div class="seal" aria-hidden="true">結</div>' +
+      '<div><h1 class="r-name" id="r-name" tabindex="-1">' + esc(t.name) + "</h1></div></div>");
+    parts.push('<p class="r07">' + esc(QC.r07) + "</p>");
+    parts.push('<p class="r08">' + esc(QC.r08) + "</p>");
+    parts.push('<p class="r-tag">' + esc(t.tagline) + "</p>");
+    parts.push('<p class="r-catch">' + esc(t.catch) + "</p>");
+    parts.push('<div class="map-wrap">' + Y.axisMap(r.X, r.Y, r.key, {
+      aria: fill(shared ? RS.mapAriaShared : RS.mapAria, { type: t.name }),
+      top: RS.mapAxes && RS.mapAxes.top, bottom: RS.mapAxes && RS.mapAxes.bottom,
+      left: RS.mapAxes && RS.mapAxes.left, right: RS.mapAxes && RS.mapAxes.right }) + "</div>");
+
+    /* 婚活での生かし方：liveHeading は types.<型>.live の見出しとして1回だけ。
+       テーマは themeLead → themeHeading → next だけを出します（themes.*.live は出しません）。 */
+    if (t.live) { parts.push('<h2 class="sec">' + esc(RS.liveHeading) + "</h2><p>" + esc(t.live) + "</p>"); }
+    if (theme && theme.next) {
+      parts.push('<div class="hl">' +
+        (QC.themeLead ? '<p class="hl-feature">' + esc(fill(QC.themeLead, { element: elLabel })) + "</p>" : "") +
+        '<h2 class="sec">' + esc(RS.themeHeading) + "</h2><p>" + esc(theme.next) + "</p></div>");
+    }
+    parts.push(Y.typeSections(t));
+
     var cta = Y.ctaBlocks({
-      t: t, src: src, biz: src === "shared" ? false : r.biz,
+      t: t, src: src, noComment: shared, biz: shared ? false : r.biz,
       commentLine: t.name + "でした",
-      dmLine: fill(C.cta.dmLineTemplate || "{type}と出ました。無料相談の話を聞かせてください。", { type: t.name })
+      dmLine: fill(C.cta.dmLineTemplate, { type: t.name })
     });
-    var sharedBar = (src === "shared")
-      ? '<div class="shared-bar"><p>' + esc(QC.sharedBanner) + "</p>" +
-        '<button class="btn" id="own" type="button">' + esc(QC.sharedBannerButton) + "</button></div>"
-      : "";
+    parts.push(cta.html.comment + cta.html.biz + cta.html.line);
 
-    host.innerHTML = sharedBar +
-      '<p class="kicker">' + esc(QC.resultKicker || RS.kicker) + "</p>" +
-      Y.typeHeader(t) +
-      '<p class="r07">' + esc(QC.r07) + "</p>" +
-      '<p class="r08">' + esc(RS.r08) + "</p>" +
-      '<div class="map-wrap">' + Y.axisMap(r.X, r.Y, r.key, {
-        aria: RS.mapAria, top: RS.mapAxes && RS.mapAxes.top, bottom: RS.mapAxes && RS.mapAxes.bottom,
-        left: RS.mapAxes && RS.mapAxes.left, right: RS.mapAxes && RS.mapAxes.right }) + "</div>" +
-      cta.html.comment +
-      (theme ? '<div class="hl"><h2 class="sec">' + esc(RS.themeHeading) + "</h2><p>" + esc(theme.next) + "</p>" +
-               '<h3 class="sub3">' + esc(RS.liveHeading) + "</h3><p>" + esc(theme.live) + "</p></div>" : "") +
-      (t.live ? '<h2 class="sec">' + esc(RS.liveHeading) + "</h2><p>" + esc(t.live) + "</p>" : "") +
-      Y.typeSections(t) +
-      share.html +
-      cta.html.biz + cta.html.line +
-      '<div class="again">' +
-        '<a class="btn" id="to-hw" href="index.html">' + esc(QC.toHandwriting) + "</a>" +
-        '<button class="btn btn-ghost" id="retake" type="button">' +
-          esc(src === "shared" ? QC.startButton : QC.retakeButton) + "</button>" +
-      "</div>" +
-      '<p class="about-link"><a href="about.html">' + esc(RS.aboutLink) + "</a></p>";
+    var share = null;
+    if (!shared) {
+      share = Y.shareBlock({
+        text: fill(C.share.quizTextTemplate, { type: t.name }),
+        url: Y.siteBase() + "/t/" + Y.safeKey(t.key) + ".html",
+        body: C.share.quizBody
+      });
+      parts.push(share.html);
+    }
+    parts.push('<div class="again">' +
+      '<a class="btn" id="to-hw" href="index.html">' + esc(QC.toHandwriting) + "</a>" +
+      (shared ? "" : '<button class="btn btn-ghost" id="retake" type="button">' + esc(QC.retakeButton) + "</button>") +
+    "</div>");
+    parts.push('<p class="about-link"><a href="about.html">' + esc(RS.aboutLink) + "</a></p>");
 
+    host.innerHTML = parts.join("");
     screen("result");
     host.classList.remove("fade");
     void host.offsetWidth;
     host.classList.add("fade");
     window.scrollTo(0, 0);
     try { $("r-name").focus({ preventScroll: true }); } catch (e) {}
-    document.title = t.name + " ｜「結」の書き方診断（10問版）";
+    document.title = t.name + " ｜" + (C.title || "「結」の書き方診断") + "（10問版）";
     cta.bind();
-    share.bind();
+    if (share) { share.bind(); }
     Y.on("retake", restart);
-    Y.on("own", restart);
+    var own = $("own");
+    if (own) {
+      own.addEventListener("click", function (e) { e.preventDefault(); restart(); });
+    }
     /* 共有された他人の結果を、閲覧者の保存データとして書き込まないこと。 */
-    if (src !== "shared") { save(); }
+    if (!shared) { save(); }
   }
 
   function restart() {
@@ -309,7 +336,7 @@
       return;
     }
     screen("intro");
-    document.title = "書かずに受ける10問版 ｜「結」の書き方診断";
+    document.title = (C.quizMeta && C.quizMeta.title) || "書かずに受ける10問版 ｜「結」の書き方診断";
     var f0 = firstUnanswered();
     var label = (answers[0] >= 0 && f0 > 0 && f0 < N) ? (QC.resumeButton + "（" + (f0 + 1) + "問目から）") : QC.startButton;
     Y.setText("start", label);

@@ -141,6 +141,28 @@ async function writeAndFinish(page, opts = {}) {
   check('4タイプのどれかが出る', NAMES.some((n) => name.includes(n)), name);
   const resText = await page.textContent('#result');
   check('型名の直下に R07 がある（畳まない）', await page.isVisible('.r07'));
+  check('型名の次の要素が R07（あいだに何も置かない）', await page.evaluate(() => {
+    const h = document.querySelector('#result .r-head');
+    return !!(h && h.nextElementSibling && h.nextElementSibling.classList.contains('r07'));
+  }));
+  check('R07 に採点に使った特徴の名前が入る', /「|口|糸|吉|線|画/.test(await page.textContent('#result .r07')));
+  check('R14（相談の勧誘の可能性）が相談ボタンの直上にある', await page.evaluate(() => {
+    const b = document.getElementById('dm-go');
+    const p = b && b.previousElementSibling;
+    return !!(p && p.classList.contains('cta-lead'));
+  }));
+  check('LINEの前置きがLINEボタンの直上にある', !C.config.lineUrl || await page.evaluate(() => {
+    const b = document.getElementById('line-go');
+    const p = b && b.previousElementSibling;
+    return !!(p && p.classList.contains('cta-lead'));
+  }));
+  check('較正が仮の値である旨が、最初の測定値より前にある', !/^synthetic/.test(String(C.calibration.version)) || await page.evaluate(() => {
+    const n = document.querySelector('#result .cal-note');
+    const r = document.querySelector('#result .m-list');
+    return !!(n && r && (n.compareDocumentPosition(r) & Node.DOCUMENT_POSITION_FOLLOWING));
+  }));
+  check('共有ボタンが出る（自分の結果）', (await page.locator('#sh-native').count()) === 1);
+  check('シェア文に型名が入る', (await page.textContent('#result .share-text')).includes(name.replace(/（.*$/, '').replace(/寄りの.*$/, '').trim().slice(0, 2)));
   check('R08 がある', resText.includes(C.hw.result.r08));
   check('自分の字が描き直される', (await page.locator('.yui-ink path.ink').count()) >= 8);
   check('測定値が並ぶ', (await page.locator('.m-list .m-row').count()) >= 4);
@@ -188,6 +210,10 @@ async function writeAndFinish(page, opts = {}) {
   await p2.waitForSelector('#result:not([hidden])', { timeout: 5000 });
   check('他の人が開くと共有バナーが出る', (await p2.locator('.shared-bar').count()) === 1);
   check('共有では無料相談を押しつけない', (await p2.locator('#dm-copy').count()) === 0);
+  check('共有では、ほかの方の型をシェアさせない', (await p2.locator('#sh-native').count()) === 0);
+  check('共有では、ほかの方の型をコメントさせない', (await p2.locator('#cp-type').count()) === 0);
+  check('共有では「この結果の点は」と読み上げる', ((await p2.getAttribute('#result svg.map', 'aria-label')) || '').includes('この結果の点'));
+  check('共有の帯から書かずに受ける経路へ行ける', (await p2.locator('.shared-bar a[href="q.html"]').count()) === 1);
   for (const bad of ['#/r/zzz', '#/r/' + 'a'.repeat(64), '#/r/../../x', '#/write2', '#/gate']) {
     await p2.goto('about:blank');
     await p2.goto(BASE + bad, { waitUntil: 'networkidle' });
@@ -261,6 +287,26 @@ async function writeAndFinish(page, opts = {}) {
   check('10問版から手書きへ戻れる', (await qp.getAttribute('#to-hw', 'href')) === 'index.html');
   check('10問版の結果ハッシュが5文字', /^#\/r\/[a-z2-7]{5}$/.test(new URL(qp.url()).hash));
   check('10問版に差し込み語が残っていない', !/\{[a-zA-Z0-9_]+\}/.test(qText));
+  check('10問版は10問版の R07・R08 を使う', qText.includes(C.quiz.copy.r07) && qText.includes(C.quiz.copy.r08) && !qText.includes(C.hw.result.r08));
+  check('10問版に「あなたの字」の文言が出ない', !/あなたの字|書いた「結」で/.test(qText));
+  check('10問版にテーマの書き出しと次のテーマが出る', (await qp.locator('#result .hl .hl-feature').count()) === 1);
+  check('10問版に basis（字の当てはめルール）を出さない', !C.types.some((t) => qText.includes(t.basis)));
+  check('10問版のシェア文は型名だけ', /^「結」の書き方診断（10問版）で/.test((await qp.textContent('#result .share-text')).trim()));
+  const qcode = new URL(qp.url()).hash;
+  const qctx = await mkCtx();
+  const qp2 = await qctx.newPage();
+  watch(qp2);
+  await qp2.goto(BASE + 'q.html' + qcode, { waitUntil: 'networkidle' });
+  await qp2.waitForSelector('#result:not([hidden])', { timeout: 5000 });
+  check('10問版の共有リンクを他の人が開くと帯が出る', (await qp2.locator('.shared-bar').count()) === 1);
+  check('  帯の主ボタンは手書き版へ', (await qp2.getAttribute('#own-hw', 'href')) === 'index.html');
+  check('  共有ボタン・コメントCTA・無料相談は出ない',
+    (await qp2.locator('#sh-native').count()) === 0 && (await qp2.locator('#cp-type').count()) === 0 && (await qp2.locator('#dm-copy').count()) === 0);
+  check('  読み上げは「この結果の点は」', ((await qp2.getAttribute('#result svg.map', 'aria-label')) || '').includes('この結果の点'));
+  await qp2.click('#own');
+  await qp2.waitForSelector('#gate:not([hidden])', { timeout: 5000 });
+  check('  帯の R06 から10問を始められる', await qp2.isVisible('#gate'));
+  await qctx.close();
 
   /* ---------------- 静的ページ ---------------- */
   head('■ 静的ページ');
@@ -269,6 +315,10 @@ async function writeAndFinish(page, opts = {}) {
     const res = await page.goto(BASE + 't/' + key + '.html', { waitUntil: 'networkidle' });
     check(`t/${key}.html が開ける`, res.status() === 200);
     check('  フッターが描画される', (await page.textContent('#site-footer')).includes(C.footer.r09.slice(0, 12)));
+    check('  catch の直後に打消し（typePageNote）', await page.evaluate(() => {
+      const c = document.querySelector('.r-catch');
+      return !!(c && c.nextElementSibling && c.nextElementSibling.classList.contains('r07'));
+    }));
   }
   const abt = await page.goto(BASE + 'about.html', { waitUntil: 'networkidle' });
   check('about.html が開ける', abt.status() === 200);

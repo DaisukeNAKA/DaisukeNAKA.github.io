@@ -297,10 +297,14 @@
       '<p class="r-catch">' + esc(t.catch) + "</p>";
   }
 
-  function typeSections(t) {
+  /* opts.basis … 手書き版の結果とタイプ別ページだけ、summary の前に「どんな字をこの型に当てはめるか」を出します。
+     10問版では字を書いていないので出しません。 */
+  function typeSections(t, opts) {
     var R = (C.hw && C.hw.result) || {};
     var out =
-      '<h2 class="sec">' + esc(R.summaryHeading || "この型の進め方") + '</h2><p>' + esc(t.summary) + "</p>" +
+      '<h2 class="sec">' + esc(R.summaryHeading || "この型の進め方") + "</h2>" +
+      (opts && opts.basis && t.basis ? '<p class="basis">' + esc(t.basis) + "</p>" : "") +
+      "<p>" + esc(t.summary) + "</p>" +
       '<h2 class="sec">' + esc(R.strengthHeading || "強みが出る場所") + '</h2><p>' + esc(t.strength) + "</p>" +
       '<h2 class="sec">' + esc(R.stumbleHeading || "つまずきやすい場面") + '</h2><p>' + esc(t.stumble) + "</p>";
     if (t.badExample && t.goodExample) {
@@ -324,7 +328,8 @@
     var backPost = postFromQuery();
     var html = { comment: "", biz: "", line: "" };
 
-    html.comment =
+    /* 共有された結果を開いた人に、ほかの方の型を自分の型としてコメントさせないため、shared では出しません。 */
+    html.comment = opts.noComment ? "" :
       '<div class="cta">' +
         "<h2>" + esc(CT.commentHeading) + "</h2>" +
         "<p>" + esc(CT.commentBody) + "</p>" +
@@ -344,12 +349,14 @@
        出さない側に倒すと、相談したい人が行き場を失うためです。 */
     var showBiz = opts.biz !== false;
     if (showBiz && (CFG.dmUrl || CFG.profileUrl)) {
+      /* R14（勧誘の可能性を先に告げる一文）は、相談ボタンの直上に置きます（特商法施行令1条・2条への備え）。
+         dmLimit は事実の確認が済むまで空文字で、そのときは何も出しません。 */
       html.biz =
         '<div class="cta">' +
           "<h2>" + esc(CT.dmHeading) + "</h2>" +
-          (CT.dmLead ? '<p class="cta-lead">' + esc(CT.dmLead) + "</p>" : "") +
           "<p>" + esc(CT.dmBody) + "</p>" +
           (CT.dmLimit ? '<div class="cta-limit">' + esc(CT.dmLimit) + "</div>" : "") +
+          (CT.dmLead ? '<p class="cta-lead">' + esc(CT.dmLead) + "</p>" : "") +
           (CFG.dmUrl
             ? '<a class="btn" id="dm-go" href="' + esc(CFG.dmUrl) + '" target="_blank" rel="noopener">' + esc(CT.dmButton) + "</a>"
             : '<a class="btn" id="dm-go" href="' + esc(CFG.profileUrl) + '" target="_blank" rel="noopener">' + esc(CT.dmProfileButton || CT.dmButton) + "</a>") +
@@ -370,6 +377,7 @@
         '<div class="cta">' +
           "<h2>" + esc(CT.lineHeading) + "</h2>" +
           "<p>" + esc(CT.lineBody) + "</p>" +
+          (CT.lineLead ? '<p class="cta-lead">' + esc(CT.lineLead) + "</p>" : "") +
           '<a class="btn btn-line" id="line-go" href="' + esc(CFG.lineUrl) + '" target="_blank" rel="noopener">' + esc(CT.lineButton) + "</a>" +
         "</div>";
     }
@@ -385,11 +393,13 @@
     var SH = C.share || {};
     var html =
       '<h2 class="sec">' + esc(SH.heading) + "</h2>" +
-      '<p class="sec-lead">' + esc(SH.body) + "</p>" +
+      '<p class="sec-lead">' + esc(opts.body != null ? opts.body : SH.body) + "</p>" +
       '<div class="share-text">' + esc(opts.text) + "</div>" +
       '<div class="share-btns">' +
-        '<button class="btn" id="sh-native" type="button">' + esc(SH.nativeButton || "シェアする") + "</button>" +
-        '<button class="btn btn-ghost" id="sh-copy" type="button">' + esc(SH.copyButton || "文面をコピー") + "</button>" +
+        '<button class="btn" id="sh-native" type="button">' + esc(SH.nativeButton || SH.shareButton || "シェアする") + "</button>" +
+        '<button class="btn btn-ghost" id="sh-copy" type="button">' + esc(SH.copyButton || "文面とリンクをコピー") + "</button>" +
+        /* リンクを付けずに文面だけを共有できる手段。share.body の末文が前提にしています。 */
+        '<button class="btn btn-ghost" id="sh-copytext" type="button">' + esc(SH.copyTextButton || "文面だけをコピー") + "</button>" +
         '<a class="btn btn-ghost" id="sh-x" target="_blank" rel="noopener" href="https://twitter.com/intent/tweet?text=' +
           encodeURIComponent(opts.text + "\n" + opts.url) + '">' + esc(SH.xButton || "Xに投稿") + "</a>" +
       "</div>";
@@ -400,6 +410,7 @@
         });
       });
       on("sh-copy", function () { copyText(opts.text + "\n" + opts.url, SH.copied || "文面をコピーしました"); });
+      on("sh-copytext", function () { copyText(opts.text, SH.copied || "文面をコピーしました"); });
     }
     return { html: html, bind: bind };
   }

@@ -15,6 +15,8 @@ const path = require('path');
 
 const ROOT = path.resolve(__dirname, '..', '..');
 const YUI = path.join(ROOT, 'yui');
+/* check.js は YUI_OUT に一時ディレクトリを渡して、生成物が最新かどうかを比べます。 */
+const OUT = process.env.YUI_OUT ? path.resolve(process.env.YUI_OUT) : YUI;
 
 global.window = {};
 require(path.join(YUI, 'content.js'));
@@ -32,6 +34,9 @@ const esc = (s) =>
 /* content.js は運用者が直接編集するファイルなので、色とキーは形を検証してから埋め込みます。 */
 const hex = (c, fb) => (/^#[0-9a-fA-F]{3,8}$/.test(String(c)) ? String(c) : fb);
 const slug = (k) => String(k).replace(/[^A-Za-z0-9_-]/g, '');
+/* common.js の fill と同じく、知らない {トークン} は残します（check.js が残りを検出します）。 */
+const fillT = (tpl, map) =>
+  String(tpl == null ? '' : tpl).replace(/\{([a-zA-Z0-9_]+)\}/g, (m, k) => (map[k] == null ? m : String(map[k])));
 const li = (src) =>
   (Array.isArray(src) ? src : String(src || '').split('\n'))
     .map((l) => String(l).replace(/^[・\-•]\s*/, '').trim())
@@ -95,8 +100,8 @@ ${scripts.map((s) => `<script src="${depth}${s}"></script>`).join('\n')}
 const I = H.intro, W = H.write, G = H.gate || {};
 const indexHtml =
   head({
-    title: `${C.title} ｜ ${I.catch}`,
-    desc: C.metaDescription,
+    title: C.meta.title,
+    desc: C.meta.description,
     canonical: `${SITE}/`,
     ogImage: `${SITE}/ogp/yui-top-${OGPV}.png`,
     themeColor: '#c8453c',
@@ -111,12 +116,13 @@ const indexHtml =
     <h1 id="intro-title">${esc(I.title)}</h1>
     <p class="r01" id="c-r01">${esc(I.r01)}</p>
     <p class="sub" id="c-catch">${esc(I.catch)}</p>
-    <p class="hook" id="c-hook">${esc(I.hook)}</p>
+    <!-- R02 はキャッチのすぐ下。打消しを強調表示から離さないため -->
     <p class="disclaimer" id="c-r02">${esc(I.r02)}</p>
+    <p class="hook" id="c-hook">${esc(I.hook)}</p>
+    <p class="note" id="c-r03">${esc(I.r03)}</p>
 
     <div class="start-wrap">
       <button class="btn" id="start" type="button">${esc(I.startButton)}</button>
-      <p class="note" id="c-r03" style="margin-top:12px;text-align:center">${esc(I.r03)}</p>
       <p class="alt-path" style="text-align:center"><a id="alt-quiz-intro" href="q.html">${esc(I.altLink)}</a></p>
     </div>
 
@@ -145,21 +151,23 @@ const indexHtml =
     <h2 class="qtext" id="w-heading" tabindex="-1">${esc(W.heading)}</h2>
     <!-- 書かずに受ける経路は、読み上げ順でも枠より前に置きます -->
     <p class="alt-path"><a id="alt-quiz" href="q.html">${esc(I.altLink)}</a></p>
-    <p class="w-lead" id="w-r04">${esc(W.r04)}</p>
     <p class="note" id="w-nopointer" hidden>${esc(W.noPointer || I.altLink)}</p>
+    <!-- R03・R04 はどちらもキャンバスの直上 -->
+    <p class="note" id="w-r03">${esc(I.r03)}</p>
+    <p class="w-lead" id="w-r04">${esc(W.r04)}</p>
+    <p class="note" id="w-size">${esc(W.sizeHint)}</p>
     <div class="pad-wrap" id="pad-wrap">
       <div class="pad" id="pad">
         <canvas id="cv" role="application" aria-label="${esc(W.ariaCanvas)}"></canvas>
       </div>
     </div>
+    <p class="note" id="w-r05" style="margin-top:10px">${esc(W.r05)}</p>
     <div class="w-problem" id="w-problem" role="status" aria-live="polite" hidden></div>
     <div class="w-btns">
       <button class="btn btn-ghost" id="w-undo" type="button" disabled>${esc(W.undo)}</button>
       <button class="btn btn-ghost" id="w-clear" type="button" disabled>${esc(W.clear)}</button>
     </div>
     <button class="btn" id="w-done" type="button" disabled>${esc(W.done)}</button>
-    <p class="note" id="w-r05" style="margin-top:14px">${esc(W.r05)}</p>
-    <p class="note" id="w-r03">${esc(I.r03)}</p>
     <p class="note" id="w-inapp" hidden>${esc(W.inappHint)} ${esc(W.lineExternal)}</p>
   </section>
 
@@ -180,7 +188,7 @@ const indexHtml =
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
 ` + foot('', ['content.js', 'hw-engine.js', 'common.js', 'hw.js']);
 
-fs.writeFileSync(path.join(YUI, 'index.html'), indexHtml, 'utf8');
+fs.writeFileSync(path.join(OUT, 'index.html'), indexHtml, 'utf8');
 console.log('  index.html');
 
 /* ---------------- q.html（書かずに受ける10問版） ---------------- */
@@ -188,8 +196,8 @@ const QC = C.quiz.copy;
 const NQ = C.quiz.questions.length;
 const qHtml =
   head({
-    title: `${QC.title} ｜ ${C.title}`,
-    desc: QC.metaDescription,
+    title: C.quizMeta.title,
+    desc: C.quizMeta.description,
     canonical: `${SITE}/q.html`,
     ogImage: `${SITE}/ogp/yui-top-${OGPV}.png`,
     themeColor: '#c8453c',
@@ -200,16 +208,15 @@ const qHtml =
   <section id="intro" aria-labelledby="intro-title">
     <div id="resume-host"></div>
     <div class="seal" aria-hidden="true" style="margin:0 0 26px">結</div>
-    <p class="kicker">${esc(I.kicker)}</p>
     <h1 id="intro-title">${esc(QC.title)}</h1>
     <p class="r01">${esc(I.r01)}</p>
     <p class="sub" id="c-subtitle">${esc(QC.subtitle)}</p>
+    <p class="disclaimer" id="c-r02">${esc(QC.r02)}</p>
     <p class="hook" id="c-hook">${esc(QC.hook)}</p>
-    <p class="disclaimer">${esc(QC.r02)}</p>
     <div class="start-wrap">
       <button class="btn" id="start" type="button">${esc(QC.startButton)}</button>
-      <p class="note" id="c-privacy" style="margin-top:12px;text-align:center">${esc(QC.privacyLine)}</p>
-      <p class="alt-path" style="text-align:center"><a href="index.html">${esc(QC.toHandwriting)}</a></p>
+      <p class="note" id="c-privacy" style="margin-top:12px">${esc(QC.privacyLine)}</p>
+      <p class="alt-path" style="text-align:center"><a id="to-hw-intro" href="index.html">${esc(QC.toHandwriting)}</a></p>
     </div>
     <hr class="rule">
     <p class="block-title">この診断で分かること</p>
@@ -224,7 +231,7 @@ const qHtml =
     <p class="scene" id="g-scene"></p>
     <h2 class="qtext" id="g-text" tabindex="-1"></h2>
     <div class="opts" id="g-opts" role="group" aria-labelledby="g-text"></div>
-    <p class="note" style="margin-top:18px">${esc(G.note)} このあと${NQ}問です。</p>
+    <p class="note" id="g-note" style="margin-top:18px">${esc(QC.gateNote)}このあと${NQ}問です。</p>
   </section>
 
   <section id="quiz" hidden>
@@ -248,11 +255,11 @@ const qHtml =
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
 ` + foot('', ['content.js', 'common.js', 'quiz.js']);
 
-fs.writeFileSync(path.join(YUI, 'q.html'), qHtml, 'utf8');
+fs.writeFileSync(path.join(OUT, 'q.html'), qHtml, 'utf8');
 console.log('  q.html');
 
 /* ---------------- タイプ別ページ ---------------- */
-fs.mkdirSync(path.join(YUI, 't'), { recursive: true });
+fs.mkdirSync(path.join(OUT, 't'), { recursive: true });
 const R = H.result;
 C.types.forEach((t) => {
   const key = slug(t.key);
@@ -262,8 +269,8 @@ C.types.forEach((t) => {
   const canonical = `${SITE}/t/${key}.html`;
   const html =
     head({
-      title: `${t.name} ｜${C.title}`,
-      desc: t.catch,
+      title: fillT(C.typePageMeta.titleTemplate, { type: t.name, catch: t.catch }),
+      desc: fillT(C.typePageMeta.descriptionTemplate, { type: t.name, catch: t.catch }),
       canonical,
       ogImage: `${SITE}/ogp/${key}-${OGPV}.png`,
       themeColor: color,
@@ -285,9 +292,11 @@ C.types.forEach((t) => {
       </div>
     </div>
     <p class="r-catch">${esc(t.catch)}</p>
+    <!-- R02 の役目の打消し。catch と basis のあいだから動かさないこと -->
     <p class="r07">${esc(C.typePageNote)}</p>
 
     <h2 class="sec">${esc(R.summaryHeading || 'この型の進め方')}</h2>
+    ${t.basis ? `<p class="basis">${esc(t.basis)}</p>` : ''}
     <p>${esc(t.summary)}</p>
     <h2 class="sec">${esc(R.strengthHeading || '強みが出る場所')}</h2>
     <p>${esc(t.strength)}</p>
@@ -314,7 +323,7 @@ C.types.forEach((t) => {
 </main>
 ` + foot('../', ['content.js', 'common.js']);
 
-  fs.writeFileSync(path.join(YUI, 't', `${key}.html`), html, 'utf8');
+  fs.writeFileSync(path.join(OUT, 't', `${key}.html`), html, 'utf8');
   console.log(`  t/${key}.html`);
 });
 
@@ -322,8 +331,8 @@ C.types.forEach((t) => {
 const A = C.about;
 const aboutHtml =
   head({
-    title: `この診断について ｜${C.title}`,
-    desc: A.lead,
+    title: C.aboutMeta.title,
+    desc: C.aboutMeta.description,
     canonical: `${SITE}/about.html`,
     ogImage: `${SITE}/ogp/yui-top-${OGPV}.png`,
     themeColor: '#c8453c',
@@ -344,7 +353,7 @@ const aboutHtml =
     <div class="cta t-cta">
       <h2>${esc(A.closingTitle)}</h2>
       <p>${esc(A.closing)}</p>
-      <a class="btn" href="index.html">${esc(I.startButton)}</a>
+      <a class="btn" href="index.html">${esc(A.closingButton || I.startButton)}</a>
       <p class="alt-path" style="margin-top:12px;text-align:center"><a href="q.html">${esc(I.altLink)}</a></p>
     </div>
     <p style="margin:26px 0 0"><a class="t-back" href="index.html">← 診断のトップへ</a></p>
@@ -352,7 +361,7 @@ const aboutHtml =
 </main>
 ` + foot('', ['content.js', 'common.js']);
 
-fs.writeFileSync(path.join(YUI, 'about.html'), aboutHtml, 'utf8');
+fs.writeFileSync(path.join(OUT, 'about.html'), aboutHtml, 'utf8');
 console.log('  about.html');
 
 console.log(`\n${C.types.length + 3} ページを生成しました。`);

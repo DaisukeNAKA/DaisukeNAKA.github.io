@@ -66,7 +66,7 @@ function stub(to, title) {
 <p>「結」の書き方診断は、新しい場所へ移りました。<br>
 自動で移動します。切り替わらない場合は<br>
 <a href="${esc(to)}">${esc(to)}</a><br>を開いてください。</p>
-<script>location.replace(${JSON.stringify(to)});</script>
+<script>location.replace(${JSON.stringify(to)} + location.search + location.hash);</script>
 </body>
 </html>
 `;
@@ -76,7 +76,11 @@ const written = [];
 fs.writeFileSync(path.join(YUI, 'index.html'), stub(base + '/', '移転のお知らせ ｜「結」の書き方診断'), 'utf8');
 written.push('index.html');
 
-fs.writeFileSync(path.join(YUI, 'about.html'), stub(base + '/about.html', '移転のお知らせ ｜ この診断を書いた人'), 'utf8');
+/* 結果のアドレス（#/r/…）と投稿ごとの ?s= を落とさないよう、スクリプトでは search と hash を引き継ぎます。 */
+fs.writeFileSync(path.join(YUI, 'q.html'), stub(base + '/q.html', '移転のお知らせ ｜「結」の書き方診断（10問版）'), 'utf8');
+written.push('q.html');
+
+fs.writeFileSync(path.join(YUI, 'about.html'), stub(base + '/about.html', '移転のお知らせ ｜ この診断について'), 'utf8');
 written.push('about.html');
 
 C.types.forEach((t) => {
