@@ -206,7 +206,9 @@
     node.classList.add("picked");
     node.setAttribute("aria-pressed", "true");
     paintSegs();
-    save();
+    /* 途中の回答は、続きから再開できるよう残します。10問すべてに答え終えたら、再開の用はないので消します
+       （結果はアドレスに入っていて、開き直しは履歴の印で本人のものと分かります）。 */
+    if (firstUnanswered() >= N) { Y.store.del(SKEY); } else { save(); }
     setTimeout(function () {
       $("q-stage").classList.add("out");
       setTimeout(function () {

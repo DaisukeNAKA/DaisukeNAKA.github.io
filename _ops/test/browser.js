@@ -199,6 +199,13 @@ async function writeAndFinish(page, opts = {}) {
   const name2 = (await page.textContent('#r-name')).trim();
   check('2回目のあとも結果が出る', NAMES.some((n) => name2.includes(n)), name2);
   check('2回目のあとは案内が消える', (await page.locator('#write-2').count()) === 0);
+  const beforeRetake = page.url();
+  await page.click('#retake');
+  await page.waitForSelector('#write:not([hidden])');
+  check('「もう一度書く」で、隠れた結果の画面からも線の図が消える', (await page.locator('#result .yui-ink, #result img, #result #collect-json').count()) === 0);
+  await page.goBack();
+  await page.waitForSelector('#result:not([hidden])', { timeout: 5000 });
+  check('  戻ると自分の結果（共有扱いにしない）', (await page.locator('.shared-bar').count()) === 0 && page.url() === beforeRetake);
 
   /* ---------------- 再読み込み・共有 ---------------- */
   head('■ 再読み込みと共有リンク');
@@ -219,6 +226,13 @@ async function writeAndFinish(page, opts = {}) {
   check('共有では、ほかの方の型をコメントさせない', (await p2.locator('#cp-type').count()) === 0);
   check('共有では「この結果の点は」と読み上げる', ((await p2.getAttribute('#result svg.map', 'aria-label')) || '').includes('この結果の点'));
   check('共有の帯から書かずに受ける経路へ行ける', (await p2.locator('.shared-bar a[href="q.html"]').count()) === 1);
+  /* 自分の前回と同じ型でも、ほかの方のリンクは「共有」として出す（型の名前だけで自分の結果と見なさない） */
+  const ownKey = await page.evaluate(() => { try { return JSON.parse(localStorage.getItem('yui.hw.last')).k; } catch (e) { return null; } });
+  await p2.evaluate((k) => { localStorage.setItem('yui.hw.last', JSON.stringify({ k: k, h: 'x', t: Date.now() })); }, ownKey);
+  await p2.goto('about:blank');
+  await p2.goto(page.url(), { waitUntil: 'networkidle' });
+  await p2.waitForSelector('#result:not([hidden])', { timeout: 5000 });
+  check('前回と同じ型の、ほかの方のリンクも「共有」として出す', (await p2.locator('.shared-bar').count()) === 1);
   for (const bad of ['#/r/zzz', '#/r/' + 'a'.repeat(64), '#/r/../../x', '#/write2', '#/gate']) {
     await p2.goto('about:blank');
     await p2.goto(BASE + bad, { waitUntil: 'networkidle' });

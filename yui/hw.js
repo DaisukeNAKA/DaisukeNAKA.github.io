@@ -252,9 +252,16 @@
     var prev = S.sessionPrev || null;
     S.current = { code: code, key: scored.key, scored: scored, feats: feats,
                   prevKey: prev && prev.k !== scored.key ? prev.k : null };
-    Y.store.set(LKEY, JSON.stringify({ k: scored.key, t: Date.now() }));
+    /* h は結果のアドレスの記号から作った短い見分け用の値です（測った値そのものは入れません）。
+       型の名前だけで見分けると、同じ型のほかの方の共有リンクを、自分の結果として出してしまうためです。 */
+    Y.store.set(LKEY, JSON.stringify({ k: scored.key, h: codeHash(code || "self"), t: Date.now() }));
     /* 結果のアドレスに入れられない組み合わせのときも、画面は出します（共有のリンクはタイプ別ページを指すため）。 */
     nv.nav("#/r/" + (code || "self"));
+  }
+  function codeHash(str) {
+    var h = 5381;
+    for (var i = 0; i < str.length; i++) { h = ((h * 33) ^ str.charCodeAt(i)) >>> 0; }
+    return h.toString(36);
   }
   function readLast() {
     var raw = Y.store.get(LKEY);
@@ -695,6 +702,10 @@
   }
 
   function restart() {
+    /* 隠れた結果の画面にも、書いた線の図・保存用の画像・較正用の数字が残るので、ここで消します
+       （footer.r11「「もう一度書く」を押すと消えます」の約束）。 */
+    var rh = $("result");
+    if (rh) { rh.innerHTML = ""; }
     S.a1 = S.a2 = S.s1 = S.s2 = null;
     S.current = null;
     S.strokes = [];
@@ -722,7 +733,8 @@
       /* 端末に保存できない環境（保存がブロックされている等）でも、自分の結果を開き直したときに
          「ほかの方が共有した結果です」と出さないよう、この履歴の項目に付けた印（history.state）も見ます。 */
       var own = !!(history.state && history.state.yuiOwn === code);
-      render({ src: (own || (last && last.k === dec.key)) ? "reload" : "shared", key: dec.key, dec: dec });
+      if (!own && last && last.k === dec.key && last.h === codeHash(code)) { own = true; }
+      render({ src: own ? "reload" : "shared", key: dec.key, dec: dec });
       return;
     }
     screen("intro");

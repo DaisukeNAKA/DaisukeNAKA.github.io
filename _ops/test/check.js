@@ -515,7 +515,9 @@ head('■ 端末の外へ出るもの・端末に残るもの');
   if (odd.length) { ng('端末に保存するキーが想定外', odd.join(', ')); } else { ok('端末に保存するのは ' + [...new Set(keys)].join('・') + ' だけ'); }
   const hw = read('yui/hw.js');
   const setLast = (hw.match(/store\.set\(LKEY,[^\n]*/) || [''])[0];
-  if (/strokes|pts|coords|feats/.test(setLast)) { ng('yui.hw.last に線や特徴量を入れている', setLast); } else { ok('yui.hw.last には型の名前と日時だけ'); }
+  /* 結果のコード（測った値が入る）をそのまま保存しないこと。見分け用のハッシュだけにします（footer.r11）。 */
+  if (/strokes|pts|coords|feats|:\s*code\b/.test(setLast)) { ng('yui.hw.last に線・特徴量・結果のコードを入れている', setLast); }
+  else { ok('yui.hw.last には型の名前・見分け用の短い記号・日時だけ'); }
   const direct = js.filter((f) => f !== 'common.js' && /localStorage|sessionStorage|indexedDB|document\.cookie/.test(read('yui/' + f).replace(/\/\*[\s\S]*?\*\//g, '')));
   if (direct.length) { ng('common.js の store を通さずに端末へ保存している', direct.join(', ')); }
 }
