@@ -484,6 +484,36 @@ head('■ 迷いタップ・なぐり書き（どの画にも対応しないイ�
   check(nbN >= 300 && !nbBad.length, `字のそば（インクから 0.03〜0.08）の 2〜20% の迷い線 ${nbN} 通り（向き・時刻はでたらめ）で、測定値が黙って変わらない` +
     `（同じ ${nbN - nbRej}・弾く ${nbRej} ${J(nbCodes)}）`, nbBad.slice(0, 4).join('\n         '));
 
+  // 書き終えてから、底の横画(12)の終わりの方（画の 50%・70% から先）をなぞり直した（ずれ 0 と線の太さ 1 本分）：なぞり書きとして
+  // 字のインクに数え、測定値は変わらない（弾かない）。なぞり書きかどうかは、いちばん近いお手本の画の線だけでなく、字のインク全体と比べる。
+  // 以前は、口の右下の角のそばで、角で接する横折(11)の線と比べて「なぞり書きでない」とし、extraInk で弾くことがあった
+  const rtBad = [], rtRej = [];
+  let rtN = 0;
+  const rtW = [];
+  for (let seed = 1; seed <= 12; seed++) rtW.push({ seed, side: 320 });
+  const rrt = SY.mulberry32(9300);
+  for (let i = 0; i < 30; i++) rtW.push(Object.assign(CALS0.writing(CALS0.person(rrt), SY.mulberry32(93000 + i), 93000 + i), { renmen: [], split11: false, order: 'standard' }));
+  rtW.forEach((w) => {
+    const st = SY.synth(w), side = w.side, a = HW.analyze(st, { side });
+    if (!a.ok) return;
+    const P = st[11].points, mv = P.slice(0, P.length - 1);
+    [0.5, 0.7].forEach((fr) => [0, 0.5, 1].forEach((off) => {
+      const seg = mv.slice(Math.floor(fr * mv.length)), tEnd = lastT(st) + 500, t0 = seg[0].t;
+      const pts = seg.map((q) => ({ x: q.x, y: q.y + off * 0.022 * side, t: q.t - t0 + tEnd }));
+      pts.push(Object.assign({}, pts[pts.length - 1], { t: pts[pts.length - 1].t + 60 }));
+      const b = HW.analyze(st.concat([{ points: pts }]), { side });
+      rtN++;
+      const tag = `seed ${w.seed} ${fr * 100}% から ずれ ${off}`;
+      /* ずれが線の太さ1本分ちょうどのなぞり直しは、弾いてもよい（書き直してもらう）。ただし黙って測定値を変えないこと。
+         なぞり書きの許しを線の太さの 1.25 倍まで広げると、1.0〜1.25 倍ずれたなぞり直しが本物の画の受け持ちを奪い、
+         型が黙って変わった（最終確認 R1）ため、許しは線の太さ 1 本分のままにしています */
+      if (!b.ok) { if (off < 1) rtRej.push(`${tag}: ${J(b.problems)}`); }
+      else if (J(b.feats) !== J(a.feats)) rtBad.push(`${tag}: ${HW.FEATURES.filter((k) => J(a.feats[k]) !== J(b.feats[k])).join(',')}`);
+    }));
+  });
+  check(rtN >= 240 && !rtBad.length && !rtRej.length, `書き終えてから底の横画の終わりの方をなぞり直しても（ずれ 0・線の太さ半分は弾かず、1 本分は弾くことがあるが、${rtN} 通りのどれも測定値を黙って変えない）`,
+    rtBad.concat(rtRej).slice(0, 4).join('\n         '));
+
   // 動かさずに触れて離しただけのタップ（静止中の pointermove の 0.2〜0.3px の揺れつき）は、道のりが一辺の 1% を超えても
   // 画数に数えない（広がりで測る）
   const rj = SY.mulberry32(7), jBad = [];
@@ -639,6 +669,34 @@ head('■ 連綿（続け書き、f4）');
     if (!a11.ok || a11.feats.f4 !== 0 || J(a11.debug.assign) !== J(s11.truth)) bad.push(`seed ${seed} 口を4画: ${J(a11.debug.assign)} ${J(a11.problems)}`);
   });
   check(!bad.length, '口を一筆で書いても口が見つかり f4≥1、糸の2か所で f4=2、口を4画で書いても1つの画として扱う', bad.slice(0, 4).join('\n         '));
+  // 口を4画で書いて、横折の縦を角ぴったりでなく、角から線の太さの 1〜2 倍ずれた所（角の下＝すき間、上の横画を突き抜けた上）や、
+  // 横に線の太さほどずれた所から書き始めても、弾かず、縦は横折(11)の一部として足す（farJoin）。形（すき間・縦横比・大きさ・
+  // 口の左上と左下）はずれのないときと丸めの1目盛り以内で同じ（右下 f9 は縦の終わりの位置で決まるので、境目では変わることがある）。
+  // 以前は、縦の書き出しが角の線の太さの 1.5 倍（横は 1 倍）より外だと足さず、extraInk で弾いていた（角の 1.5 倍下で 95%）
+  const s11Bad = [], s11Chg = [], s11W = [];
+  let s11N = 0;
+  for (let seed = 1; seed <= 12; seed++) s11W.push({ seed });
+  const CALS11 = require('./hw-calibration.js'), r11 = SY.mulberry32(1111);
+  for (let i = 0; i < 30; i++) s11W.push(Object.assign(CALS11.writing(CALS11.person(r11), SY.mulberry32(11000 + i), 11000 + i), { renmen: [], order: 'standard' }));
+  s11W.forEach((w0) => {
+    const w = Object.assign({}, w0, { split11: true, split11Start: 0, split11Side: 0 }), side = w.side || 320;
+    const a = HW.analyze(SY.synth(w), { side });
+    if (!a.ok) { s11Bad.push(`seed ${w.seed} ずれなし: ${J(a.problems)}`); return; }
+    [[1, 0], [2, 0], [-1, 0], [-2, 0], [0, 1], [0, -1]].forEach(([along, lat]) => {
+      const m = SY.make(Object.assign({}, w, { split11Start: along * 0.022, split11Side: lat * 0.022 }));
+      const b = HW.analyze(m.strokes, { side, debug: true });
+      s11N++;
+      const tag = `seed ${w.seed} ${along ? `${along > 0 ? '角の下' : '角の上'} ${Math.abs(along)}` : `横 ${lat}`} 本分`;
+      // 2本とも 11 に（接触の途切れとして1本につながったなら、その1本が 11 に）対応づき、ほかの画の対応づけは同じ
+      const asg = b.ok ? b.debug.assign.map(J) : [], want = m.truth.map(J);
+      const sameAsg = b.ok && J(asg.filter((x) => x !== '[11]')) === J(want.filter((x) => x !== '[11]')) && asg.indexOf('[11]') >= 0 && asg.every((x) => x !== '[]');
+      if (!b.ok || !sameAsg) { s11Bad.push(`${tag}: ${b.ok ? J(b.debug.assign) : J(b.problems)}`); return; }
+      const dd = ['f1', 'f10'].filter((f) => state(a.feats, f) !== state(b.feats, f)).concat(['f2', 'f7', 'f14'].filter((f) => !(Math.abs(a.feats[f] - b.feats[f]) <= 0.01 + 1e-9)));
+      if (dd.length) s11Chg.push(`${tag}: ${dd.map((f) => `${f} ${J(a.feats[f])}→${J(b.feats[f])}`).join(', ')}`);
+    });
+  });
+  check(s11N >= 250 && !s11Bad.length && !s11Chg.length, `口を4画で書き、横折の縦を角から線の太さの 1〜2 本分ずらして（下・上・横）書き始めても（${s11N} 通り）、弾かず、縦は 11 の一部になり、形も変わらない`,
+    s11Bad.concat(s11Chg).slice(0, 4).join('\n         '));
   // 画の途中で指を上げて、同じ所から書き足した（2〜3本に切れた）。0.08 秒（接触の途切れと同じ扱いで1本につなぐ）でも、
   // 0.15 秒（「画の一部」として同じ画に足す）でも、外接枠による特徴（大きさ f14・縦横比 f7・すき間 f2）・頭部突出 f13・
   // 口の開閉は、丸めの1目盛り以内で変わらない
@@ -712,6 +770,30 @@ head('■ 連綿（続け書き、f4）');
   check(dropN >= 300 && dropBad.length <= dropN * 0.01 && dropSame >= 0.98 * dropN && dropMarks >= 0.97 * dropMarkN,
     `画の終わり際・止めの最中・書き出し直後の接触の途切れ ${dropN} 通り（${J(dropSt)}）で、画の数は同じ、口の開閉・すき間・縦横比・大きさ・止め（±20ms）が` +
     `変わったのは ${dropBad.length} 通り（1% 以下）、型は ${dropSame}/${dropN} で同じ、とめの印は ${dropMarks}/${dropMarkN} で同じ`, dropBad.slice(0, 4).join('\n         '));
+  // 折れのある画（糸の 1・2 画目の「く」、口の横折 11）の、画の 20〜80% の所で接触が 40〜90ms 途切れても弾かない。形（口の開閉・
+  // 転折・すき間・縦横比・大きさ・頭部突出・連綿）は変わらない。角の前後の途切れは、向きが途切れの前後で回るので、ずれの向きが
+  // その間にあればつなぎ（continues）、つながらなくても離した所から続く切れ端は同じ画に足す（farJoin・attachParts の tail）。
+  // 以前は角の前後の途切れをつながず、切れ端を extraInk で弾いていた（60ms で 1 画目の 3 割、90ms で 11 画目の 4 割）。
+  // 弾いてよいのは 1% まで：画の書き出し直後の長い途切れで、切れ端が離した所から線の太さの PART_FAR（4）倍より離れたとき
+  // （速く書く人の 90ms。どちらの画かを形から確かめられないので、黙って足さずに「もう一度」）
+  const cornerBad = [], cornerChg = [];
+  let cornerN = 0;
+  for (let seed = 1; seed <= 12; seed++) {
+    const st = SY.synth({ seed }), a = HW.analyze(st, { side: 320 });
+    [0, 1, 10].forEach((k) => [0.2, 0.4, 0.6, 0.8].forEach((frac) => [40, 60, 90].forEach((gap) => {
+      const d = SY.dropout(st, k, frac, gap);
+      if (!d) return;
+      const b = HW.analyze(d, { side: 320 });
+      cornerN++;
+      if (!b.ok) { cornerBad.push(`seed ${seed} ${k + 1}画目 ${frac * 100}% ${gap}ms: ${J(b.problems)}`); return; }
+      const dd = ['f1', 'f9', 'f10', 'f11'].filter((f) => state(a.feats, f) !== state(b.feats, f))
+        .concat(['f2', 'f7', 'f13', 'f14'].filter((f) => !(Math.abs(a.feats[f] - b.feats[f]) <= 0.01 + 1e-9)))
+        .concat(a.feats.f4 === b.feats.f4 ? [] : ['f4']);
+      if (dd.length) cornerChg.push(`seed ${seed} ${k + 1}画目 ${frac * 100}% ${gap}ms: ${dd.map((f) => `${f} ${J(a.feats[f])}→${J(b.feats[f])}`).join(', ')}`);
+    })));
+  }
+  check(cornerN >= 400 && cornerBad.length <= cornerN * 0.01 && !cornerChg.length, `折れのある画（1・2・11）の 20〜80% で接触が 40〜90ms 途切れても（${cornerN} 通り）、弾くのは ${cornerBad.length} 通り（1% 以下）で、形の測定値も変わらない`,
+    cornerBad.concat(cornerChg).slice(0, 4).join('\n         '));
   // 書き終えてから画の終わりに落ちた小さなタップ（一辺の 1.2〜1.8%）は、画の続きとして数えない（なぞり書きと同じ扱い）
   const tapEnd = [], lastT = (st) => st[st.length - 1].points.slice(-1)[0].t;
   for (let seed = 1; seed <= 6; seed++) {
@@ -897,6 +979,55 @@ head('■ 結果に使わない約束：ふるえ・途中の長い間');
     });
   }
   check(!stopBad.length, '動く速さが同じなら、止め 0・200・400ms で速さ f6 は同じ（30 人。止めの間の pointermove ありでも ±0.01）', stopBad.slice(0, 4).join(' / '));
+
+  // 同じ止めのあとに「とめ」で離しても「はね」ても（止めた位置から字の大きさの 1 割ほど、左上へ 60ms ではねる）、速さ f6 は ±3%、
+  // 間の割合 f8 は ±0.01 で同じ。はねの折り返した点を画の終わりとみなす（hookRefs）。以前は、はねが EDGE_Q より長いと
+  // 止めが動いていた区間に入り、0.2 秒未満の止めは一部しか除かないので、f6 が最大 15% 下がっていた（止め 60〜100ms で 4〜5 割の人が 5% 超）
+  const withHane = (st, idx, side) => {
+    const out = st.map((s) => ({ points: s.points.map((p) => ({ x: p.x, y: p.y, t: p.t })) }));
+    const P = out[idx].points, up = P.pop(), e0 = P[P.length - 1], n = 4, dx = -0.05 * side / Math.hypot(1, 0.8), dy = 0.8 * dx;
+    for (let k = 1; k <= n; k++) P.push({ x: e0.x + dx * k / n, y: e0.y + dy * k / n, t: up.t + 60 * k / n });
+    P.push({ x: P[P.length - 1].x, y: P[P.length - 1].y, t: up.t + 61 });
+    for (let k = idx + 1; k < out.length; k++) out[k].points.forEach((p) => { p.t += 61; });
+    return out;
+  };
+  const haneBad = [];
+  let haneN = 0, haneMax = 0;
+  const rh = SY.mulberry32(3030);
+  for (let i = 0; i < 40; i++) {
+    const w0 = Object.assign(CALS.writing(CALS.person(rh), SY.mulberry32(30000 + i), 30000 + i), { renmen: [], split11: false, order: 'standard' });
+    [3, 7].forEach((idx) => [60, 100, 150, 250].forEach((stop) => {
+      const st = SY.synth(Object.assign({}, w0, { stopMs: stop }));
+      // この画の止めをちょうど stop ms にそろえる（あとの画はずらす）
+      const P = st[idx].points, lm = P[P.length - 2], up = P[P.length - 1], dt = lm.t + stop - up.t;
+      up.t = lm.t + stop;
+      for (let k = idx + 1; k < st.length; k++) st[k].points.forEach((p) => { p.t += dt; });
+      const a = HW.analyze(st, { side: w0.side }), b = HW.analyze(withHane(st, idx, w0.side), { side: w0.side });
+      if (!a.ok || !b.ok) { haneBad.push(`#${i} ${idx + 1}画目 止め ${stop}ms: ${J(a.problems)} ${J(b.problems)}`); return; }
+      haneN++;
+      haneMax = Math.max(haneMax, Math.abs(b.feats.f6 / a.feats.f6 - 1));
+      if (Math.abs(b.feats.f6 / a.feats.f6 - 1) > 0.03 || Math.abs(b.feats.f8 - a.feats.f8) > 0.01 + 1e-9) haneBad.push(`#${i} ${idx + 1}画目 止め ${stop}ms: f6 ${a.feats.f6}→${b.feats.f6} f8 ${a.feats.f8}→${b.feats.f8}`);
+    }));
+  }
+  check(haneN >= 300 && !haneBad.length, `同じ止め（60〜250ms）のあとに「とめ」で離しても「はね」ても、速さ f6 は ±3%（最大 ${(100 * haneMax).toFixed(1)}%）・f8 は ±0.01 で同じ（${haneN} 通り。糸の縦 4・士の縦 8）`, haneBad.slice(0, 4).join(' / '));
+
+  // 画の途中で指を離して、0.3 秒後に同じ所から続けて書いた（画の一部）：速さ f6 は ±2%、間の割合 f8 は ±0.01 で同じ。
+  // 画の一部をつないだ1本の線（unitRaw）で、書き出しと終わりの EDGE_Q を除くのは画の本当の両端だけ。以前は切れ端ごとに両端を除いたので、
+  // f8 が最大 0.07 変わり、型の変わる人が 0.8% → 2.2% に増えていた
+  const liftBad = [];
+  let liftN = 0, liftMax6 = 0, liftMax8 = 0;
+  const rl = SY.mulberry32(2020);
+  for (let i = 0; i < 90; i++) {
+    const w = Object.assign(CALS.writing(CALS.person(rl), SY.mulberry32(20000 + i), 20000 + i), { renmen: [], split11: false, order: 'standard' });
+    const idx = [0, 1, 3, 6, 7, 8, 9, 10, 11][i % 9], st = SY.synth(w), a = HW.analyze(st, { side: w.side });
+    if (!a.ok) continue;
+    const b = HW.analyze(SY.split(st, idx, 2, 300, 'lift'), { side: w.side });
+    liftN++;
+    if (!b.ok) { liftBad.push(`#${i} ${idx + 1}画目: ${J(b.problems)}`); continue; }
+    liftMax6 = Math.max(liftMax6, Math.abs(b.feats.f6 / a.feats.f6 - 1)); liftMax8 = Math.max(liftMax8, Math.abs(b.feats.f8 - a.feats.f8));
+    if (Math.abs(b.feats.f6 / a.feats.f6 - 1) > 0.02 || Math.abs(b.feats.f8 - a.feats.f8) > 0.01 + 1e-9) liftBad.push(`#${i} ${idx + 1}画目: f6 ${a.feats.f6}→${b.feats.f6} f8 ${a.feats.f8}→${b.feats.f8}`);
+  }
+  check(liftN >= 80 && !liftBad.length, `画の途中で指を離して同じ所から続けて書いても（${liftN} 人・9 種の画）、弾かれず、速さ f6 は ±2%（最大 ${(100 * liftMax6).toFixed(1)}%）・f8 は ±0.01（最大 ${liftMax8.toFixed(2)}）で同じ`, liftBad.slice(0, 4).join(' / '));
 
   // 指を画面に置いたまま考えた 1〜3 秒（動き出す前・画の途中・離す前）では、型はほとんど変わらない（98% 以上で同じ）。
   // 以前は、指を置いたままの時間が速さ f6 の分母と 1画の長さ（f8）に入り、3 秒で 3 割近くの人の型が変わっていた。

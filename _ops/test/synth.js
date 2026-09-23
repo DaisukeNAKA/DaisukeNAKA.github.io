@@ -102,6 +102,8 @@ const DEFAULTS = {
   posNoise: 0.004,    // 画ごとの位置のばらつき（SD、お手本の単位）
   renmen: [],         // 続けて書く画の組 [[a,b], ...]（お手本の画番号）
   split11: false,     // 横折(11)を2画に分けて書く（口を4画で書く人）
+  split11Start: 0,    // そのときの縦の書き出しの、角からのずれ（キャンバス一辺=1。縦の向きに正＝角より下から、負＝上の横画を突き抜けて上から）
+  split11Side: 0,     // 同じく横のずれ（縦の向きを画面の上で時計回りに 90° 回した向き＝下へ書く縦なら左を正。縦の最初の 1/4 で元の線に戻る）
   stopMs: 150,        // とめの画で止まる時間の傾向（数値、または {4:..,7:..} で画ごと）
   speed: 1.3,         // 書く速さ（字の高さ/秒、指が動いている間。止めている時間は含まない。字の高さは字全体を回す前の高さ）
   pauseRatio: 0.45,   // 画と画の間（空中）の時間 / 全体の時間
@@ -182,7 +184,7 @@ function buildGroups(p, shape) {
     if (k === 11 && p.split11) {
       const s = st[10], c = shape.corner11;
       groups.push({ nums: [11], path: s.slice(0, c + 1), first: 11, sub: 0 });
-      groups.push({ nums: [11], path: s.slice(c), first: 11, sub: 1 });
+      groups.push({ nums: [11], path: startOffset(s.slice(c), p.split11Start || 0, p.split11Side || 0), first: 11, sub: 1 });
       continue;
     }
     groups.push({ nums: [k], path: st[k - 1], first: k });
@@ -192,6 +194,31 @@ function buildGroups(p, shape) {
   else if (p.order === 'kiFirst') groups.sort((x, y) => ((x.first < 7) - (y.first < 7)) || (ord(x) - ord(y)));
   else groups.sort((x, y) => ord(x) - ord(y));
   return groups;
+}
+
+/* 口を4画で書く人の横折の縦（角から始まる線 v）の書き出しを、角からずらす。指を置く位置は角ぴったりにはならないため
+ * （指の置き方のばらつきは線の太さ＝一辺の 2.2% ほど）。a は縦の最後の区間の向きに沿ったずれ（正なら角より先＝下から書き始め、
+ * 負なら角より手前＝上の横画を突き抜けた所から書き始める）、b は横のずれ（縦の最後の区間の向きを画面の上で時計回りに 90° 回した向きを正）。
+ * 横のずれは、縦の道のりの 1/4 の所で元の線に戻るようにします。 */
+function startOffset(v, a, b) {
+  if (!(a || b) || v.length < 2) return v;
+  const e0 = v[v.length - 2], e1 = v[v.length - 1], n = d2(e0, e1) || 1, u = [(e1[0] - e0[0]) / n, (e1[1] - e0[1]) / n];
+  let path = v.map((q) => q.slice());
+  if (a > 0) {
+    const L = plen(path), s0 = Math.min(a, 0.5 * L), first = along(path, s0);
+    let acc = 0, k = 1;
+    for (; k < path.length; k++) { acc += d2(path[k - 1], path[k]); if (acc > s0) break; }
+    path = [first].concat(path.slice(k));
+  } else if (a < 0) {
+    path = [[path[0][0] + u[0] * a, path[0][1] + u[1] * a]].concat(path);
+  }
+  if (b) {
+    const L = plen(path), mid = along(path, L / 4);
+    let acc = 0, k = 1;
+    for (; k < path.length; k++) { acc += d2(path[k - 1], path[k]); if (acc > L / 4) break; }
+    path = [[path[0][0] - u[1] * b, path[0][1] + u[0] * b], mid].concat(path.slice(k));
+  }
+  return path;
 }
 
 /* 1本の線を、角（40°以上の折れ）ごとに区切った運動に分ける。角では指が止まりかけるため。 */

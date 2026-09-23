@@ -30,15 +30,29 @@
  *   ・【変更3】画の途中で接触だけが途切れた（pointerup のあと JOIN_MS=0.1 秒以内に、指が動いていた先で pointerdown が来た。
  *     止めている最中なら同じ位置で）線は、切れ端の大きさにかかわらず1本の線につなぎ直してから測ります（joinDropouts の注記）。
  *     nStrokes・8〜16 画の判定・debug.assign も、つないだあとの線で数えます。
+ *     【変更4】角を回る途中の途切れ（横折 11 の角・糸の 1・2 画目の折れ）は、ここではつながらなくても、対応づけのあとで
+ *     同じ画の一部として足します（下の farJoin・tail。以前は切れ端を extraInk で弾いていた）。
  *   ・字と関係のないインク（迷いタップ・迷い線・字の上のなぐり書き）は、お手本のどの画にも対応しなければ
  *     測定から外します。小さなものは黙って外し、線の長さの 5% を超えるときは extraInk で弾きます。
  *     【変更3】広がりが TAP_LEN（2%）未満の印は、お手本の画そのものにも画の一部にもしません（なぞり書きと同じ扱い）。
  *     画の一部として足すのは、広がり 4%（PART_MIN）以上で、書いた順でその画のすぐ前後にあり、画の端から続けて書いた線だけです。
+ *     【変更4】「画の端から続けて書いた」には、お手本の画の折れ（横折 11 の角・糸の 1・2 画目の折れ）をはさんで、書いた順で
+ *     隣の線の離した点（書き始めの点）から線の太さの 3 倍（PART_FAR_ANY）以内、または 4 倍（PART_FAR。接触の途切れなら
+ *     その間に動けた距離）以内でずれの向きが線の向きに沿うか角を回る間にある線も入れます（farJoin の注記）。
+ *     まっすぐな所では、これまでどおり線の太さの 1.5 倍までです。
+ *     口を4画で書いて横折の縦を角から線の太さの 1〜3 倍ずれた所（角の下・上の横画を突き抜けた上）から書き始めた線や、
+ *     角の前後で接触が途切れてつながらなかった切れ端です（以前は 1.5 倍（横は 1 倍）を超えると足さず、extraInk で弾いていた）。
+ *     いちばん近いお手本の画に足せなければ、近い順にほかのお手本の画にも足せるかを確かめ、最後の当て直しのあとには、
+ *     なぞり書きにした線も確かめ直します（attachParts の注記）。画の続きに見える PART_MIN 未満の切れ端は、これまでどおり
+ *     形・時間には使いませんが、取り合いとしては弾きません（tail）。
  *     【変更3】字のそば（お手本の画から平均 NEAR_D 以内）に、どの画も受け持たない線や、受け持つ画とは別の画に沿って走る部分が
  *     あり、それがその画を受け持つ線のなぞり書き（線の太さ以内）でなければ、どちらがその画かを形から決められないので
  *     extraInk で弾きます（ambiguous の注記。以前は照合の順で片方を黙って選んでいました）。
+ *     【変更4】なぞり書きかどうかは、いちばん近いお手本の画の線だけでなく、字のインク全体と比べ、線の点の 75%（小さな線は半分）が
+ *     線の太さ以内にあることにしました（RETRACE の注記。口の右下の角のそばで底の横画の終わりをなぞり直すと、
+ *     角で接する横折の線と比べて弾いていた）。
  *
- * 返す値（契約。前の版からの変更点に【変更】【変更2】を、この版での変更に【変更3】を付けています）：
+ * 返す値（契約。前の版からの変更点に【変更】【変更2】【変更3】を、この版での変更に【変更4】を付けています）：
  *   { ok, problems, feats, marks, nStrokes, totalMs }
  *   ・【変更】ok が false のときは、feats の14個（形・時間の特徴のすべて）は null です。形の崩れた入力から出た数を、
  *     画面側が ok を見落としても型や表示に使ってしまわないようにするためです。
@@ -59,6 +73,11 @@
  *     秒数で割ったので、止めの長さが f5 と f6 の両方から y 軸に入り（止め 200ms で f6 が 2 割下がった）、指を置いたまま
  *     考えた 1〜3 秒でも型が変わっていました。f8 の「1画の長さ」も、指が動いていた時間にしました。値の大きさが変わるので、
  *     較正（content.js の calibration）は作り直した値に貼り替えてください（_ops/test/hw-calibration.js が知らせます）。
+ *     【変更4】画の一部を書き足した画は、線を時刻順につなぎ、指を離していた間（と離す前に止めていた間）を詰めた1本の線（unitRaw）で、
+ *     インクと動いていた時間を測ります。両端の EDGE_Q を除くのは画の本当の書き出しと終わりだけです（以前は切れ端ごとに除いたので、
+ *     途中で指を離して書き足しただけで f8 が最大 0.07 変わった）。また、止めてから短くはねた画は、折り返した点を画の終わりとみなし、
+ *     はねる前の止めとはね自体を数えません（hookRefs の注記。以前は同じ止めのあとに「とめ」か「はね」かで f6 が最大 15% 変わった）。
+ *     debug.moving は、これまでどおり線ごとの値です。
  *   ・【変更2】縦横比 f7・すき間 f2・大きさ f14・速さ f6 の字の高さ・頭部突出 f13 は、字全体の回転（スマホを斜めに持った分）を
  *     回し戻した外接枠で測ります。【変更3】回転の推定が MAX_ROT（30°）を超えるときは 30° に抑えて回し戻します（以前は回し戻しを
  *     やめていたので、-30° 前後で縦横比・すき間が急に変わった）。右上がり f12 も、同じ回転の推定を引きます（以前は縦画 4・8 の
@@ -201,6 +220,11 @@
   var PART_COS = 0.85;
   var PART_JOIN_D = 1.5;
   var PART_LAT = 1;
+  /* 離した所から続けて書いた線として足す、端どうしの距離の上限（線の太さの何倍か。farJoin の注記） */
+  var PART_FAR = 4;
+  var PART_FAR_T = 0.15;
+  var PART_TURN_COS = 0.866;
+  var PART_FAR_ANY = 3;
   /* 画の一部として足す線の、広がりの下限（キャンバス一辺の 4%）。これより小さな線は、画の続きに見えても
    * なぞり書きと同じ扱い（字のインクとしては数えるが、形・時間・外接枠には使わない）にします。
    * 接触の途切れ（0.1 秒以内）で切れた切れ端は、joinDropouts で先に1本につないでいるので、ここに来る「画の一部」は、
@@ -223,6 +247,17 @@
   /* 取り合いの確かめ（ambiguous の注記）で「お手本の画のそば」とみなす距離（字の大きさ=1。平均の距離）。
    * 押しのけの確かめで外す線も、これより離れていなければ外しません（STRAY_D と同じ値）。 */
   var NEAR_D = STRAY_D;
+  /* なぞり書きとみなす、字のインクからの距離（線の太さの何倍か。retraces）：線の点の距離の中央値と 75% 点（RETRACE_Q）が
+   * RETRACE 倍未満（広がりが PART_MIN 未満の小さな線は、中央値だけ）。
+   * 【変更4】「中央値が線の太さ未満」から変えました。線の太さちょうどずらしてなぞり直した線が点の揺れで半分ほど弾かれ、
+   * 逆に、なぞり直した線に画を取られた本物の画（半分ほどがインクに重なる）は、字のインク全体と比べると中央値だけでは通り、
+   * 測定値が黙って変わるためです。小さな線（タップの揺れ・短い切れ端）は点の数が少なく、75% 点が揺れで決まるので中央値だけで見ます。
+   * 迷い線の確かめの帯（インクから 0.03 以上＝線の太さの 1.36 倍以上）には届きません。
+   * 許しの幅は線の太さ 1 本分（1.0）のままです。1.25 倍まで広げると、1.0〜1.25 倍ずれたなぞり直しが本物の画の受け持ちを奪い、
+   * 測定値と型が黙って変わりました（最終確認 R1：1,440 通り中 127 通り）。ちょうど 1 本分ずれたなぞり直しは弾くことがありますが、
+   * 書き直してもらうほうが、黙って違う結果を出すより害が小さいためです */
+  var RETRACE = 1.0;
+  var RETRACE_Q = 0.75;
   /* 押しのけの確かめを始める当てはまり（照合距離の平均）。displaced の注記 */
   var DISP_RESID = 0.02;
   /* はっきり（1周目のしきい値で）対応づいたお手本の画がこれ未満なら「結」とみなさない */
@@ -555,7 +590,7 @@
       for (var kk = cd.a; kk <= cd.b; kk++) { if (tUsed[kk]) { return; } }
       sUsed[cd.i] = true;
       for (kk = cd.a; kk <= cd.b; kk++) { tUsed[kk] = true; }
-      A.push({ i: cd.i, a: cd.a, b: cd.b, c: cd.c, parts: [], dup: [] });
+      A.push({ i: cd.i, a: cd.a, b: cd.b, c: cd.c, parts: [], dup: [], tail: [] });
     }
     function freeStrokes() {
       var f = [];
@@ -651,7 +686,8 @@
      * また、書いた順でその画のすぐ前かすぐあと（nextInTime）であること。
      * 画の脇に平行に落ちた迷い線（画から 0.03〜0.05 離れたもの）や、書く前・書いたあとに画の先に落ちた迷い線が
      * 「画の続き」として足され、外接枠や時間が黙って変わるのを防ぐためです。指を離してから書き足した画・
-     * 口を4画で書いたときの横折の縦は、離した所から続けて、すぐに書くので通ります。 */
+     * 口を4画で書いたときの横折の縦は、離した所から続けて、すぐに書くので通ります。
+     * 【変更4】これで足せなくても、離した所から続けて書いた線（farJoin）なら足します。 */
     function joinsCover(en, id, sp, cov) {
       var ids = [en.i].concat(en.parts), lo = Infinity, hi = -Infinity, iLo = 0, iHi = 0, c, q;
       if (!nextInTime(id, ids)) { return false; }
@@ -670,29 +706,101 @@
       if (!(vn > 0)) { return Math.sqrt(dx * dx + dy * dy) <= PART_JOIN_D * lw; }
       var lon = (vx * dx + vy * dy) / vn, lat = Math.abs(cross(vx / vn, vy / vn, dx, dy));
       /* 端より先から書き始めたなら、端からの距離で（離した所のすぐそばから続けること）。端より手前（重ねて）書き始めたなら、横のずれで */
-      return lon > 0 ? Math.sqrt(dx * dx + dy * dy) <= PART_JOIN_D * lw : lat <= PART_LAT * lw;
+      if (lon > 0 ? Math.sqrt(dx * dx + dy * dy) <= PART_JOIN_D * lw : lat <= PART_LAT * lw) { return true; }
+      return farJoin(en, id, sp, cov, ids, lo, hi);
     }
-    /* 余った画を、いちばん近いお手本の画の「一部」として足す（その画が単独で取られているときだけ）。
-     * 足してよいかは partFit で、この呼び出しの位置合わせ（最後の当て直しのあとなら、最終の位置合わせ）で確かめます。 */
-    function attachParts(limit) {
-      var f = freeStrokes();
-      for (var q = 0; q < f.length; q++) {
-        var bk = -1, bd = Infinity;
-        for (var kk = 0; kk < 12; kk++) {
-          var d = directed(S[f[q]].co, TV[kk]);
-          if (d < bd) { bd = d; bk = kk; }
+    /* 【変更4】離した所から続けて書いた線：書いた順で隣の線（ids[c]）の、隣り合う側の端（先に書いた線なら離した点、
+     * あとに書いた線なら書き始めの点）が、覆われた範囲の端（PART_JOIN 以内）にあり、足す線が、隣り合う側の端を
+     * 覆われた範囲の端の近く（画の長さの PART_FAR_T 以内。折れの位置合わせのずれを許す）に置いて、覆われた範囲の外へ延びていて、
+     * 2つの端の点が線の太さの PART_FAR 倍以内（接触の途切れの間なら、その間に動けた距離以内。dropoutReach）。
+     * さらに、隣の線の端での向きと、お手本の画の（足す線のある所での）向きが 30° 以上違い（PART_TURN_COS。そのあいだに
+     * お手本の画の折れがある）、端どうしが線の太さの PART_FAR_ANY 倍以内（ずれの向きは問わない：角の外へ突き抜けた所・
+     * 内側から書き始めた線も）か、それより離れていれば、ずれの向きが
+     *  ・隣の線の端での向きか、お手本の画の向きに対して、横に線の太さ（PART_LAT）以内か、
+     *  ・その2つの向きのあいだ（角を回った）
+     * であること。口を4画で書いて、横折の縦を角から線の太さの 1〜2 倍ずれた所（角の下・上の線の上）から書き始めた線や、
+     * 接触が角の前後で途切れた線（joinDropouts でつながらなかったもの）は、ここで足します（以前は線の太さの 1.5 倍
+     * （横は 1 倍）を超えると足さず、取り合いの確かめで extraInk として弾いていた）。
+     * まっすぐな画の先・手前（折れのない所）は、これまでどおり線の太さの 1.5 倍（PART_JOIN_D）までです。画と平行に脇へずれた
+     * 迷い線や、画の先・入りに少し離れて落ちた迷い線を、画の続きとして足さないためです（字のインクから 0.03〜0.04 の迷い線で確かめた）。 */
+    /* 接触の途切れ（JOIN_MS 以内）で角の前後に切れた線なら、速く書く人ほど途切れの間に遠くまで動くので、端どうしの距離は
+     * joinDropouts と同じ「速いほうの速さ × 間 × JOIN_K」以内でよい（キャンバスの座標で測る） */
+    function dropoutReach(C, D, pre) {
+      var a = pre ? C : D, b = pre ? D : C, gap = b.t0 - a.t1;
+      if (!(gap >= 0 && gap <= JOIN_MS)) { return false; }
+      var va = endVel(a.raw, true), vb = endVel(b.raw, false);
+      return dist(a.raw[a.raw.length - 1], b.raw[0]) <= JOIN_EPS + JOIN_K * Math.max(va.v, vb.v) * Math.max(gap, 1);
+    }
+    function farJoin(en, id, sp, cov, ids, lo, hi) {
+      var u = S[id].co, lw = S.lwc || LW, c, T = TV[en.a], ax = axisOf(u), bj2 = 1, bd2 = Infinity, q;
+      for (q = 1; q < T.length; q++) { var dq = segDist2(ax, T[q - 1], T[q]); if (dq < bd2) { bd2 = dq; bj2 = q; } }
+      for (c = 0; c < ids.length; c++) {
+        var C = S[ids[c]], line = C.co, ct = cov[c].t, pre = C.t1 <= S[id].t0;
+        if (!(pre || S[id].t1 <= C.t0) || !nextInTime(id, [ids[c]])) { continue; }
+        var cj = pre ? line.length - 1 : 0, pj = pre ? 0 : u.length - 1, side = ct[cj] >= hi - PART_JOIN ? 1 : (ct[cj] <= lo + PART_JOIN ? -1 : 0);
+        if (!side || !(side > 0 ? sp.hi > hi + PART_JOIN && sp.t[pj] >= hi - PART_FAR_T : sp.lo < lo - PART_JOIN && sp.t[pj] <= lo + PART_FAR_T)) { continue; }
+        var P = line[cj], dx = u[pj].x - P.x, dy = u[pj].y - P.y, dd = Math.sqrt(dx * dx + dy * dy);
+        if (!(dd <= PART_FAR * lw) && !dropoutReach(C, S[id], pre)) { continue; }
+        if (dd <= PART_JOIN_D * lw) { return true; }
+        /* 向き（どちらも覆われた範囲の外へ向ける）：隣の線の端での向き u1（端から3点内側の点 → 端）と、お手本の画の向き u2 */
+        var B0 = line[pre ? Math.max(0, cj - 3) : Math.min(line.length - 1, cj + 3)], u1x = P.x - B0.x, u1y = P.y - B0.y;
+        var u2x = (T[bj2].x - T[bj2 - 1].x) * side, u2y = (T[bj2].y - T[bj2 - 1].y) * side, n1 = Math.sqrt(u1x * u1x + u1y * u1y), n2 = Math.sqrt(u2x * u2x + u2y * u2y);
+        /* 角を回っていない（隣の線の端での向きとお手本の画の向きが PART_TURN_COS より近い）なら、ここでは足さない。まっすぐな画の先や
+         * 手前に線の太さの 1.5 倍より離れて書いた線は、これまでどおり画の続きとしない（画の先・入りに落ちた迷い線を足さないため。
+         * 角かどうかを書いた線どうしの向きで決めると、画の入りに斜めに書いた迷い線が「角」になって足された） */
+        if (!(n1 > 0) || !(n2 > 0) || (u1x * u2x + u1y * u2y) / (n1 * n2) > PART_TURN_COS) { continue; }
+        /* 角では、線の太さの PART_FAR_ANY 倍以内ならずれの向きを問わない（角の外へ突き抜けた所・内側から書き始めた線も）。
+         * それより離れていれば、ずれの向きが、隣の線かお手本の画の向きに沿うか、2つの向きのあいだ（角を回った）であること */
+        if (dd <= PART_FAR_ANY * lw) { return true; }
+        if (Math.abs(cross(u1x / n1, u1y / n1, dx, dy)) <= PART_LAT * lw || Math.abs(cross(u2x / n2, u2y / n2, dx, dy)) <= PART_LAT * lw) { return true; }
+        var c12 = cross(u1x, u1y, u2x, u2y);
+        if (cross(u1x, u1y, dx, dy) * c12 >= 0 && cross(dx, dy, u2x, u2y) * c12 >= 0 && dx * (u1x / n1 + u2x / n2) + dy * (u1y / n1 + u2y / n2) > 0) { return true; }
+      }
+      return false;
+    }
+    /* 余った画を、近いお手本の画の「一部」として足す（その画が単独で取られているときだけ）。
+     * 足してよいかは partFit で、この呼び出しの位置合わせ（最後の当て直しのあとなら、最終の位置合わせ）で確かめます。
+     * 【変更4】いちばん近いお手本の画に一部として足せない（なぞり書きか、範囲の外）ときは、近い順に、平均 limit 未満の
+     * ほかのお手本の画にも一部として足せるかを確かめます。画の終わりの切れ端は、隣の画の端（横折の縦の下端に対する
+     * 底の横画の右端、糸の 1 画目の折れの先に対する 2 画目など）のほうが近いことがあり、以前はそこでなぞり書きとして止まり、
+     * 本当の画が短いまま測られていました（指を離して書き足しただけで、口の右下や縦横比が黙って変わった）。
+     * どこにも一部として足せなければ、いちばん近い画での判定（なぞり書き・足さない）のままです。
+     * いちばん近いお手本の画がまだ誰にも取られていない（または続け書きの組の中の画）なら、これまでどおり何もしません
+     * （2周目で、その画そのものとして対応づくかもしれないため）。
+     * retry のとき（最後の呼び出し）は、前の呼び出しでなぞり書きにした線も、ゆるい limit で一部として足せるかを確かめ直します。 */
+    function attachParts(limit, retry) {
+      var f = freeStrokes(), q, from = {};
+      if (retry) {
+        for (q = 0; q < A.length; q++) { for (var z = 0; z < A[q].dup.length; z++) { f.push(A[q].dup[z]); from[A[q].dup[z]] = A[q]; } }
+      }
+      for (q = 0; q < f.length; q++) {
+        var id = f[q], cand = [], kk, c, e, was = from[id];
+        if (was) { sUsed[id] = false; }
+        for (kk = 0; kk < 12; kk++) {
+          var d = directed(S[id].co, TV[kk]);
+          if (d < limit) { cand.push({ k: kk, d: d }); }
         }
-        if (bd >= limit || !lenOk(f[q], bk, bk)) { continue; }
-        for (var e = 0; e < A.length; e++) {
-          if (A[e].a === bk && A[e].b === bk) {
-            var fit = partFit(A[e], f[q]);
-            /* 画の続きに見えても、PART_MIN 未満の小さな線はなぞり書きと同じ扱い（PART_MIN の注記） */
-            if (fit === 1 && S[f[q]].ext < PART_MIN) { fit = 0; }
-            if (fit === 1) { A[e].parts.push(f[q]); sUsed[f[q]] = true; }
-            else if (fit === 0) { A[e].dup.push(f[q]); sUsed[f[q]] = true; }
-            break;
+        cand.sort(function (x, y) { return (x.d - y.d) || (x.k - y.k); });
+        var first = null;
+        for (c = 0; c < cand.length && !sUsed[id]; c++) {
+          var en = null;
+          for (e = 0; e < A.length; e++) { if (A[e].a === cand[c].k && A[e].b === cand[c].k) { en = A[e]; break; } }
+          if (!en) { if (c === 0) { break; } continue; }
+          if (!lenOk(id, en.a, en.a)) { if (c === 0) { first = { en: en, fit: -1 }; } continue; }
+          var fit = partFit(en, id);
+          /* 画の続きに見えても、PART_MIN 未満の小さな線はなぞり書きと同じ扱い（PART_MIN の注記）。
+           * 【変更4】ただし、画の続きとして書いた小さな切れ端（角で接触が途切れた、止まりかけた所からの切れ端など）であることは
+           * tail に覚えておき、取り合いの確かめ（ambiguous）では、迷い線として弾きません（形・時間には使わないので、測定値は変わりません） */
+          if (fit === 1 && S[id].ext < PART_MIN) {
+            if (was) { was.dup.splice(was.dup.indexOf(id), 1); }
+            en.dup.push(id); en.tail.push(id); sUsed[id] = true;
+            continue;
           }
+          if (fit === 1) { en.parts.push(id); sUsed[id] = true; if (was) { was.dup.splice(was.dup.indexOf(id), 1); } }
+          else if (c === 0) { first = { en: en, fit: fit }; }
         }
+        if (was) { sUsed[id] = true; continue; }
+        if (!sUsed[id] && first && first.fit === 0) { first.en.dup.push(id); sUsed[id] = true; }
       }
     }
     attachParts(PART_MAX * 0.6);
@@ -708,7 +816,7 @@
     }
     c2.sort(function (p, q) { return (p.c - q.c) || (p.a - q.a) || geoCmp(S, p.i, q.i); });
     for (m = 0; m < c2.length; m++) { if (!sUsed[c2[m].i]) { take(c2[m]); } }
-    attachParts(PART_MAX);
+    attachParts(PART_MAX, true);
     /* 延長：まだ誰も取っていないお手本の画に、隣の画を書いた線が続けて通っていれば、組を広げる。
      * 口を一筆で書いたとき、底の横画だけが組から漏れるのを防ぐため。 */
     for (k = 0; k < 12; k++) {
@@ -1041,25 +1149,42 @@
    *   離す前の点は、pointerup ではなく最後の pointermove（pointerup が UP_JUMP より離れていれば pointerup）。
    *   点の間がふつうの間隔より長いとき（止まっている間は pointermove が来ない端末）は、指は前の点で止まっていて、
    *   次の点の直前に動いたとみなして補います（crossRaw の注記）。
+   * ・【変更4】終わりで短く折り返した（はね）・書き出しで短く折り返して入った画は、折り返した点を線の端とみなします（hookRefs の注記）。
+   *   以前は、はねが EDGE_Q より長いと、はねる前の止めが動いていた区間の中に入り、0.2 秒未満の止めは一部しか除かないので、
+   *   同じ止めのあとに「とめ」で離すか「はね」るかで f6 が最大 15% 変わっていました。はねそのもの（と入り）のインクと時間も数えません。
    * ・途中の止まりは、書き始めから LP_DT ちょうどの刻みで取り直した止め用の低域通過の線（ふるえを除いたもの）で、
    *   前後 STILL_W/2 の窓の中の動きが字の大きさの STILL_R 以内の点を「止まっている」とし、その窓を合わせた区間のうち
    *   動いていた区間 [両端] に入る部分（長さ rl）を除きます。ただし除くのは rl×((rl−STILL_W)/HOLD_MS)
    *   （0〜1 に収める）で、0.1 秒ほどの止まり（ゆっくり書く人の角の減速）はほとんど除かず、0.2 秒以上の止まり
    *   （指を置いたまま考えた間）は全部除きます。しきい値の前後で動いていた時間が跳ばないように、間はなめらかにつなぎます。
    * 画が短くて EDGE_Q を横切らないときは半分の距離で、それでも横切らなければ、止まっている区間が線の端にかかっていれば
-   * それを除きます。 */
+   * それを除きます。
+   * 【変更4】指を離して書き足した画（画の一部。unitMap）は、その画の線を時刻順につなぎ、指を離していた間を詰めた1本の線
+   * （unitRaw）として測ります。両端の EDGE_Q を除くのは、その画の本当の書き出しと終わりだけです。以前は切れ端ごとに両端を
+   * 除いたので、途中で指を離して同じ所から書き足しただけで、間の割合 f8 が最大 0.07、速さ f6 が数 % 変わっていました。 */
   var EDGE_Q = STOP_Q2;
   var STILL_R = 0.02;
   var STILL_W = 100;
   var HOLD_MS = 100;
-  /* 生の点が ref から q 以上離れていた最後の時刻（fwd なら、最初に q 以上離れた時刻）。点の間は線形に補う。
-   * ただし点の間がふつうの間隔（dt0：この線の点の間隔の中央値）より長いときは、指は前の点で止まっていて、
+  /* はね・入りを探す、線の端の区間：道のりが字の大きさの HOOK_MAX 以下で、線の道のりの HOOK_FR 以下（hookRefs）。
+   * 本物の画の折れの先（糸の 1 画目の最後：字の大きさの 15%・線の 36%、2 画目：30%・42%、横折の縦：40% 以上）は、
+   * この区間より長いので、折れの手前の向きと比べることはなく、はねとは見なしません。
+   * HOOK_COS：折り返しとみなす戻りの角（cos。0.25 で約 105° 以上）。HOOK_STRAIGHT：手前の向きを測る区間の弦÷道のりの下限。
+   * HOOK_STEP・HOOK_SIGMA：道のりを測る線の間引きの間隔（字の大きさの割合）と低域通過の σ（ms）。 */
+  var HOOK_MAX = 0.12;
+  var HOOK_FR = 0.3;
+  var HOOK_COS = 0.25;
+  var HOOK_STRAIGHT = 0.9;
+  var HOOK_STEP = 0.015;
+  var HOOK_SIGMA = 15;
+  /* 生の点が raw[i0] から q 以上離れていた最後の時刻（i0 より前を探す。fwd なら、i0 よりあとで最初に q 以上離れた時刻）。
+   * 点の間は線形に補う。ただし点の間がふつうの間隔（dt0：この線の点の間隔の中央値）より長いときは、指は前の点で止まっていて、
    * 次の点の dt0 前から動いたとみなして補う（止まっている間は pointermove が来ない端末で、画の途中で指を置いたまま
    * 考えた間を、ゆっくり動いていた時間と読み違えないように） */
-  function crossRaw(raw, last, ref, q, fwd, dt0) {
-    var j, dj, dn, a, ta;
+  function crossRaw(raw, last, i0, q, fwd, dt0) {
+    var j, dj, dn, a, ta, ref = raw[i0];
     if (fwd) {
-      for (j = 1; j <= last; j++) {
+      for (j = i0 + 1; j <= last; j++) {
         dj = dist(raw[j], ref);
         if (dj >= q) {
           dn = dist(raw[j - 1], ref); a = dj > dn ? clamp((q - dn) / (dj - dn), 0, 1) : 1;
@@ -1069,7 +1194,7 @@
       }
       return null;
     }
-    for (j = last - 1; j >= 0; j--) {
+    for (j = i0 - 1; j >= 0; j--) {
       dj = dist(raw[j], ref);
       if (dj >= q) {
         dn = dist(raw[j + 1], ref); a = dj > dn ? clamp((dj - q) / (dj - dn), 0, 1) : 0;
@@ -1085,15 +1210,66 @@
     for (var j = 1; j <= last; j++) { if (raw[j].t > raw[j - 1].t) { d.push(raw[j].t - raw[j - 1].t); } }
     return d.length ? median(d) : Infinity;
   }
-  /* 動き出した時刻（fwd）・着いた時刻（!fwd）。測れなければ null */
-  function edgeTime(raw, last, cs, fwd) {
+  /* 動き出した時刻（fwd）・着いた時刻（!fwd）。i0 は測り始める点（線の端の点。はね・入りがあれば止めた位置の点）。測れなければ null */
+  function edgeTime(raw, last, cs, fwd, i0) {
     if (!(cs > 0) || last < 1) { return null; }
-    var ref = fwd ? raw[0] : raw[last], dt0 = sampleDt(raw, last);
+    var dt0 = sampleDt(raw, last);
     for (var h = 1; h <= 2; h++) {
-      var t = crossRaw(raw, last, ref, EDGE_Q * cs / h, fwd, dt0);
+      var t = crossRaw(raw, last, i0, EDGE_Q * cs / h, fwd, dt0);
       if (t !== null) { return t; }
     }
     return null;
+  }
+  /* 線の端とみなす点の番号 { b: 書き出し側, e: 終わり側 }。ふつうは線の端の点（0・last）。
+   * 終わりで短く折り返した線（はね）では、折り返した点にします：線の終わりの区間（道のりが字の大きさの HOOK_MAX 以下かつ
+   * 線の道のりの HOOK_FR 以下）の点のうち、その区間に入る手前の向き（区間の入り口と、そこから EDGE_Q 手前の点を結ぶ向き）に
+   * いちばん先まで進んだ点。そこから端の点までが EDGE_Q 以上で、手前の向きに対して約 105° 以上（HOOK_COS）戻っていれば、
+   * そこを線の終わりとみなします（戻りが EDGE_Q に届かないなら、ふつうの規則でその間の止めも除かれます）。
+   * ・折り返した点は、はねずに「とめ」で離した線の最後の点と同じ点なので、止めの長さにかかわらず（0ms でも）、
+   *   同じ止めのあとに「とめ」で離しても「はね」ても、動いていた区間は同じになります。
+   *   時間ではなく形で決めるので、止めているあいだに pointermove が来るかどうかにも依りません。
+   * ・区間と向きは、軽い低域通過（σ=HOOK_SIGMA）をかけ、字の大きさの HOOK_STEP より近い点を間引いた線の道のりで決めます
+   *   （点の揺れで道のりが伸びて、240Hz の端末ほど区間が短く・曲がって見えないように。形用の σ=LP_SIGMA は、速く書いた画の角を
+   *   丸めて道のりを縮めるので使いません）。折り返した点そのものは、生の点から選びます。区間の入り口から EDGE_Q 手前までがまっすぐ（弦が道のりの HOOK_STRAIGHT 以上）で
+   *   なければ、手前の向きが決まらない（折れや続け書きの角をまたいでいる）ので、はねとは見なしません。
+   * ・本物の画の折れの先（糸の 1 画目の最後：字の大きさの 15%・線の 36%、続け書きの 5-6 の 5 画目：19%、6 画目の入り：約 80°）は、
+   *   区間の長さか折り返しの角度の条件を満たさないので、はねとは見なしません。
+   * 書き出しも同じ規則（向きを入れ替える。短く入ってから折り返した線）なので、同じ形を逆向きに書いても同じ値になります。 */
+  function hookRefs(raw, last, cs) {
+    var out = { b: 0, e: last }, j, tA = raw[0].t, tL = raw[last].t;
+    if (!(cs > 0) || last < 2 || !(tL - tA >= LP_DT)) { return out; }
+    var NG = Math.min(LP_MAXN, Math.ceil((tL - tA) / LP_DT) + 1), sm = lpSmooth(gridAt(raw, last, tA, (tL - tA) / (NG - 1), NG), HOOK_SIGMA, true);
+    var K = [0], cum = [0];
+    for (j = 1; j < NG; j++) {
+      var kp = K[K.length - 1], dx0 = sm.x[j] - sm.x[kp], dy0 = sm.y[j] - sm.y[kp], d = Math.sqrt(dx0 * dx0 + dy0 * dy0);
+      if (d >= HOOK_STEP * cs || j === NG - 1) { K.push(j); cum.push(cum[cum.length - 1] + d); }
+    }
+    var G = K.length, tot = cum[G - 1], zone = Math.min(HOOK_MAX * cs, HOOK_FR * tot), q = EDGE_Q * cs;
+    if (!(zone >= q)) { return out; }
+    function one(fwd) {
+      var dflt = fwd ? 0 : last;
+      /* 線の端から道のり sd の、間引いた線の上の位置と時刻 */
+      function at(sd) {
+        var s0 = fwd ? sd : tot - sd, k = 1;
+        while (k < G - 1 && cum[k] < s0) { k++; }
+        var L = cum[k] - cum[k - 1], r = L > 0 ? clamp((s0 - cum[k - 1]) / L, 0, 1) : 0, a = K[k - 1], b = K[k];
+        return { x: sm.x[a] + (sm.x[b] - sm.x[a]) * r, y: sm.y[a] + (sm.y[b] - sm.y[a]) * r, t: sm.t0 + (a + (b - a) * r) * sm.dt };
+      }
+      var Z = at(zone), P = at(zone + q), ux = Z.x - P.x, uy = Z.y - P.y, un = Math.sqrt(ux * ux + uy * uy), best = 0, i0 = dflt, k;
+      if (!(un >= HOOK_STRAIGHT * q)) { return dflt; }
+      /* 区間に入る生の点（時刻で決める）のうち、手前の向きにいちばん先まで進んだ点 */
+      for (k = 0; k <= last; k++) {
+        if (fwd ? raw[k].t > Z.t : raw[k].t < Z.t) { continue; }
+        var pr = ((raw[k].x - Z.x) * ux + (raw[k].y - Z.y) * uy) / un;
+        if (fwd ? pr >= best : pr > best) { best = pr; i0 = k; }
+      }
+      if (i0 === dflt) { return dflt; }
+      var hx = raw[dflt].x - raw[i0].x, hy = raw[dflt].y - raw[i0].y, hn = Math.sqrt(hx * hx + hy * hy);
+      return hn >= q && -(hx * ux + hy * uy) / un >= HOOK_COS * hn ? i0 : dflt;
+    }
+    out.b = one(true);
+    out.e = one(false);
+    return out;
   }
   /* 止め用の低域通過の線で「止まっている」区間（ms の組の並び） */
   function stillRuns(L, cs) {
@@ -1119,17 +1295,40 @@
     return out;
   }
   /* 動いていた区間（movingSpan）と、その区間の時間（止まりの分を除いたもの）と、その区間のインクの長さ（inkLen と同じ測り方）。
+   * raw は生の点（1本の線の S[i].raw、または画の一部をつないだ unitRaw）。
    * f6 は「動いていた区間のインク ÷ 動いていた時間」。両端の EDGE_Q の中の動きは、時間からもインクからも除きます
    * （時間だけ除くと、短い点の画で速さが大きく出てしまうため）。 */
-  function moving(s, cs) {
-    var sp = movingSpan(s, cs);
+  function moving(raw, cs) {
+    var sp = movingSpan(raw, cs);
     if (!sp) { return { ms: 0, ink: 0 }; }
     /* インクは、動いていた区間 [b, e] の生の点だけから作った形用の低域通過の線（窓は区間の端で左右対称に狭める）で測る。
      * 区間の外（置いたままの間・離す前の止め、その間に pointermove が来るかどうか）が、区間の中の線の形に混ざらないように */
     var dur = sp.e - sp.b;
     if (!(dur >= LP_DT)) { return { ms: sp.ms, ink: 0 }; }
-    var G = Math.min(LP_MAXN, Math.ceil(dur / LP_DT) + 1), g = gridAt(s.raw, lastMove(s.raw), sp.b, dur / (G - 1), G);
+    var G = Math.min(LP_MAXN, Math.ceil(dur / LP_DT) + 1), g = gridAt(raw, lastMove(raw), sp.b, dur / (G - 1), G);
     return { ms: sp.ms, ink: inkOf(lpPath(lpSmooth(g, LP_SIGMA, true)), cs) };
+  }
+  /* 画の一部をつないだ線（時間の特徴で「1画」として測るまとまり。unitMap）：線を書き始めの時刻の順につなぎ、
+   * 指を離していた間（前の線の pointerup から次の線の pointerdown まで）を詰めます（次の線の時刻を前の線の pointerup の時刻に合わせる）。
+   * 離していた間は、動いていた時間にも止まっていた時間にも数えません（画と画の間でもない。unitMap の注記）。
+   * 途中の線の、止まった所に着いてから pointerup までの間（離す前に止めていた時間）も詰めます。1本の線の終わりの止め
+   * （EDGE_Q の中）と同じく、止めていた時間は数えないためです（口を4画で書く人が横の終わりで止めてから離す時間で、
+   * 速さ f6 が変わらないように）。止まった所に着いた点は、最後の点から字の大きさの JIT_BOX 以内に、隣どうし JIT_R の 2 倍以内の
+   * 小さな動きで続く点の最初の点で、止めている間に位置の同じ pointermove が来る端末でも来ない端末でも、同じ点になります
+   * （動いたまま離した線では、最後の点のままです）。 */
+  function unitRaw(S, ids, cs) {
+    if (ids.length === 1) { return S[ids[0]].raw; }
+    var out = [], k, q;
+    for (k = 0; k < ids.length; k++) {
+      var raw = S[ids[k]].raw, sh = out.length ? out[out.length - 1].t - raw[0].t : 0, end = raw.length - 1;
+      if (k < ids.length - 1) {
+        var lm = lastMove(raw);
+        end = lm;
+        while (end > 0 && dist(raw[end - 1], raw[lm]) <= JIT_BOX * cs && dist(raw[end - 1], raw[end]) <= 2 * JIT_R * cs) { end--; }
+      }
+      for (q = 0; q <= end; q++) { out.push({ x: raw[q].x, y: raw[q].y, t: raw[q].t + sh }); }
+    }
+    return out;
   }
   /* 位置を決める最後の点：pointerup が最後の pointermove から UP_JUMP 以上離れていれば pointerup、そうでなければ最後の pointermove */
   function lastMove(raw) {
@@ -1148,9 +1347,9 @@
     }
     return { t0: tA, dt: dt, x: gx, y: gy };
   }
-  function movingMs(s, cs) { var sp = movingSpan(s, cs); return sp ? sp.ms : 0; }
-  function movingSpan(s, cs) {
-    var raw = s.raw, m = raw.length - 1;
+  function movingMs(raw, cs) { var sp = movingSpan(raw, cs); return sp ? sp.ms : 0; }
+  function movingSpan(raw, cs) {
+    var m = raw.length - 1;
     if (m < 1) { return null; }
     var tA = raw[0].t, tB = raw[m].t;
     if (!(tB > tA)) { return null; }
@@ -1158,7 +1357,8 @@
     /* 止まりを探す線は、書き始めから LP_DT ちょうどの刻みで取り直す（刻みが線の長さ＝止めの長さで変わらないように） */
     var G = Math.min(LP_MAXN, Math.floor((tB - tA) / LP_DT) + 1), dt = G >= LP_MAXN ? (tB - tA) / (G - 1) : LP_DT;
     var runs = G >= 2 ? stillRuns(lpSmooth(gridAt(raw, last, tA, dt, G), LP_SIGMA_STOP, false), cs) : [];
-    var tG = tA + (G - 1) * dt, b = tA, e = tB, te = edgeTime(raw, last, cs, false), tb = edgeTime(raw, last, cs, true), r;
+    var tG = tA + (G - 1) * dt, b = tA, e = tB, r;
+    var hk = hookRefs(raw, last, cs), te = edgeTime(raw, last, cs, false, hk.e), tb = edgeTime(raw, last, cs, true, hk.b);
     if (te !== null) { e = clamp(te, tA, tB); }
     else if (runs.length && runs[runs.length - 1][1] >= tG - 1e-6) { e = runs[runs.length - 1][0]; }
     if (tb !== null) { b = clamp(tb, tA, tB); }
@@ -1387,8 +1587,12 @@
     var m = va && (!vb || va.v >= vb.v) ? va : vb;
     if (d > JOIN_EPS + JOIN_K * m.v * Math.max(gap, 1)) { return false; }
     var ux = (pb.x - pa.x) / d, uy = (pb.y - pa.y) / d;
-    if (va && ux * va.ux + uy * va.uy < JOIN_COS) { return false; }
-    return !vb || ux * vb.ux + uy * vb.uy >= JOIN_COS;
+    /* 【変更4】角を回る途中の途切れ（横折 11 の角・糸の 1・2 画目の折れ）は、ここではつなぎません。途切れの前後で向きが変わるので
+     * JOIN_COS に合わず、切れ端は別の線のまま残りますが、対応づけのあとで、お手本の画に沿って離した所から続く線として
+     * 同じ画の一部（farJoin）、または小さな切れ端（attachParts の tail）にします。ここで向きの条件をゆるめると
+     * （前後の向きのあいだなら通す、など）、画の直前・直後 0.1 秒以内に字のそばに書いた迷い線が、お手本と照らさずに画につながり、
+     * 測定値が黙って変わる例が出たためです（インクから 0.03〜0.04 の迷い線 2400 本で 2 例） */
+    return (!va || ux * va.ux + uy * va.uy >= JOIN_COS) && (!vb || ux * vb.ux + uy * vb.uy >= JOIN_COS);
   }
   function joinDropouts(list) {
     var out = [];
@@ -1786,29 +1990,36 @@
     }
     return L;
   }
-  /* 線 u（照合の座標）が、ids の線をなぞった線か：点の距離の中央値が線の太さ未満 */
-  function retraces(S, u, ids) {
+  /* 線 u（照合の座標）が、ids の線をなぞった線か（RETRACE の注記） */
+  function retraces(S, u, ids, small) {
     var d = [];
     for (var q = 0; q < u.length; q++) {
       var m = Infinity;
       for (var j = 0; j < ids.length; j++) { m = Math.min(m, polyDist(u[q], S[ids[j]].co)); }
       d.push(m);
     }
-    return d.length > 0 && median(d) < S.lwc;
+    return d.length > 0 && median(d) < RETRACE * S.lwc && (small || qSorted(d, RETRACE_Q) < RETRACE * S.lwc);
   }
   /* 取り合いの確かめ：お手本のどの画も受け持っていない線（なぞり書き・どの画にも対応しなかった線・押しのけの確かめで
-   * 外した線）のうち、広がりが TAP_LEN 以上で、いちばん近いお手本の画から平均 NEAR_D 未満にあるものが、その画を
-   * 受け持つ線をなぞった線（線の太さ以内）でなければ、true（extraInk で弾く）。
+   * 外した線）のうち、広がりが TAP_LEN 以上で、いちばん近いお手本の画から平均 NEAR_D 未満にあるものが、字のインク
+   * （お手本の画を受け持つ線のどれか）をなぞった線（線の太さの RETRACE 倍以内）でなければ、true（extraInk で弾く）。
    * 画のすぐそば（インクから 0.03〜0.05）に平行な迷い線があると、迷い線と本物の画のどちらがその画かを、形からは決められません。
    * 以前は照合の順で片方を黙って選び、迷い線のほうを選ぶと口の開閉・すき間・連綿などが変わっていました（型が変わる例もあった）。
    * どちらを選んでも黙って測定値が変わりうるので、選ばずに「もう一度」をお願いします。
    * 字から離れた迷い線（NEAR_D 以上）は、どの画にも対応しない線として外し（短ければ黙って、長ければ extraInk）、
    * 本物の画はそれぞれ自分の画を受け持つので、ふつうの字でここに当たる線はありません。 */
   function ambiguous(S, res, lines, n) {
-    var inLine = {}, i, k, q;
-    for (k = 0; k < 12; k++) { for (q = 0; q < lines[k].length; q++) { inLine[lines[k][q]] = (inLine[lines[k][q]] || []).concat([k]); } }
+    var inLine = {}, tail = {}, all = [], i, k, q;
+    for (k = 0; k < 12; k++) {
+      for (q = 0; q < lines[k].length; q++) {
+        if (!inLine[lines[k][q]]) { all.push(lines[k][q]); }
+        inLine[lines[k][q]] = (inLine[lines[k][q]] || []).concat([k]);
+      }
+    }
+    for (q = 0; q < res.A.length; q++) { for (i = 0; i < res.A[q].tail.length; i++) { tail[res.A[q].tail[i]] = true; } }
     for (i = 0; i < n; i++) {
-      if (S[i].ext < TAP_LEN) { continue; }
+      /* 画の続きの小さな切れ端（attachParts の tail）は、取り合いではない */
+      if (S[i].ext < TAP_LEN || tail[i]) { continue; }
       if (inLine[i]) {
         /* 受け持つ画のある線（続け書きの線など）でも、受け持っていない画に沿って平行に走る部分があれば、同じように見る。
          * 口の底の横画を迷い線が取り、本物の 11-12 の続け書きが 11 だけを受け持った、という取り合いを見落とさないため */
@@ -1819,10 +2030,13 @@
         }
         continue;
       }
-      var bk = -1, bd = Infinity;
-      for (k = 0; k < 12; k++) { var d = directed(S[i].co, res.TV[k]); if (d < bd) { bd = d; bk = k; } }
+      var bd = Infinity;
+      for (k = 0; k < 12; k++) { var d = directed(S[i].co, res.TV[k]); if (d < bd) { bd = d; } }
       if (!(bd < NEAR_D)) { continue; }
-      if (lines[bk].length && retraces(S, S[i].co, lines[bk])) { continue; }
+      /* 【変更4】なぞり書きかどうかは、お手本の画を受け持つすべての線（字のインク）と比べます。以前はいちばん近いお手本の画の線とだけ
+       * 比べたので、口の右下の角のそばで底の横画(12)の終わりをなぞり直すと、角で接する横折(11)の線と比べて「なぞり書きでない」とし、
+       * extraInk で弾いていました。字のインクの上をなぞった線は、どの画のインクでも、画を取り合う線ではありません */
+      if (all.length && retraces(S, S[i].co, all, S[i].ext < PART_MIN)) { continue; }
       return true;
     }
     return false;
@@ -2062,7 +2276,7 @@
       for (i = 0; i < n; i++) { asg.push(bp.covers[i] || []); }
       /* moving：各線の、指が動いていた時間（ms。movingSpan。f6 の分母と f8 の1画の長さに使う値） */
       var mvs = [];
-      for (i = 0; i < n; i++) { mvs.push(rnd(movingMs(S[i], cs), 0.01)); }
+      for (i = 0; i < n; i++) { mvs.push(rnd(movingMs(S[i].raw, cs), 0.01)); }
       debug = { assign: asg, strict: nStrict, resid: rnd(resid, 0.0001), used: A.slice(), tilt: rnd(ang * 180 / Math.PI, 0.01), off: fit.off, moving: mvs };
     }
 
@@ -2147,16 +2361,22 @@
      * f8 間の割合：画と画のふつうの間の平均 ÷（それ＋1画の長さの中央値）。全体の合計を使わないのは、
      *   一画戻して考え直した間や、途中で手を止めた1〜2か所の長い間で型が変わらないようにするためです
      *   （時間制限なし・書き直しは結果に使わない、という約束）。
-     *   1画の長さは、指が動いていた時間（画の一部を書き足したなら、その和）。同じ画の一部どうしの間は、画と画の間に数えません。 */
-    var penMs = 0, ink = 0, gaps = [], durU = {}, durs = [];
+     *   1画の長さは、指が動いていた時間。同じ画の一部どうしの間は、画と画の間に数えません。
+     *   【変更4】画の一部を書き足した画は、その線を時刻順につないで指を離していた間を詰めた1本の線（unitRaw）で、
+     *   速さ（インク・時間）と1画の長さを測ります（書き出しと終わりの EDGE_Q を除くのは、その画の本当の両端だけ）。 */
+    var penMs = 0, ink = 0, gaps = [], unitIds = {}, unitList = [], durs = [];
     for (j = 0; j < A.length; j++) {
-      var sj = S[A[j]], uj = unitOf[A[j]], mv = moving(sj, cs);
-      penMs += mv.ms;
-      durU[uj] = (durU[uj] || 0) + mv.ms;
-      ink += mv.ink;
+      var sj = S[A[j]], uj = unitOf[A[j]];
+      if (!unitIds[uj]) { unitIds[uj] = []; unitList.push(uj); }
+      unitIds[uj].push(A[j]);
       if (j > 0 && !sameUnit(unitOf, A[j - 1], A[j])) { gaps.push(Math.max(0, sj.t0 - S[A[j - 1]].t1)); }
     }
-    for (k in durU) { if (durU.hasOwnProperty(k)) { durs.push(durU[k]); } }
+    for (j = 0; j < unitList.length; j++) {
+      var mv = moving(unitRaw(S, unitIds[unitList[j]], cs), cs);
+      penMs += mv.ms;
+      ink += mv.ink;
+      durs.push(mv.ms);
+    }
     if (penMs > 0 && B.h > 0) { feats.f6 = rnd(ink / B.h / (penMs / 1000), 0.01); }
     if (gaps.length) {
       /* 間の中央値の 3 倍（最低 0.3 秒）を超える間は「考え直し・よそ見」として外し、残りの間の平均を使う。

@@ -86,8 +86,8 @@ window.YUI_CONTENT = {
         "scale": 66.7161
       },
       "f6": {
-        "median": 1.73,
-        "scale": 0.5263
+        "median": 1.72,
+        "scale": 0.5337
       },
       "f7": {
         "median": 0.06,
@@ -144,11 +144,11 @@ window.YUI_CONTENT = {
     },
     "center": {
       "x": -0.1995,
-      "y": -0.0073
+      "y": -0.0061
     },
     "axisScale": {
       "x": 0.353,
-      "y": 0.3137
+      "y": 0.3119
     },
     "boundary": 0.25
   },
