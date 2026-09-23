@@ -265,6 +265,8 @@
       "<p class=\"foot-title\">" + esc(C.title || "「結」の書き方診断") + "</p>" +
       (F.r09 ? "<p>" + esc(F.r09) + "</p>" : "") +
       (F.r10 ? "<p>" + esc(F.r10) + "</p>" : "") +
+      /* R16（IBJ加盟の表記など）。IBJ本部の確認が済むまで null で、そのあいだは何も出しません。 */
+      (typeof F.r16 === "string" && F.r16 ? '<p class="foot-r16">' + esc(F.r16) + "</p>" : "") +
       (privacy ? '<details class="foot-privacy"><summary>書いた線と、この端末に残るものについて</summary>' + privacy + "</details>" : "") +
       (rows ? '<dl class="op-block">' + rows + "</dl>" : "");
   }
@@ -302,20 +304,20 @@
   function typeSections(t, opts) {
     var R = (C.hw && C.hw.result) || {};
     var out =
-      '<h2 class="sec">' + esc(R.summaryHeading || "この型の進め方") + "</h2>" +
+      '<h2 class="sec">' + esc(R.summaryHeading || "") + "</h2>" +
       (opts && opts.basis && t.basis ? '<p class="basis">' + esc(t.basis) + "</p>" : "") +
       "<p>" + esc(t.summary) + "</p>" +
-      '<h2 class="sec">' + esc(R.strengthHeading || "強みが出る場所") + '</h2><p>' + esc(t.strength) + "</p>" +
-      '<h2 class="sec">' + esc(R.stumbleHeading || "つまずきやすい場面") + '</h2><p>' + esc(t.stumble) + "</p>";
+      '<h2 class="sec">' + esc(R.strengthHeading || "") + '</h2><p>' + esc(t.strength) + "</p>" +
+      '<h2 class="sec">' + esc(R.stumbleHeading || "") + '</h2><p>' + esc(t.stumble) + "</p>";
     if (t.badExample && t.goodExample) {
       out +=
-        '<h2 class="sec">' + esc(R.exampleHeading || "プロフィールの書き換え例") + "</h2>" +
+        '<h2 class="sec">' + esc(R.exampleHeading || "") + "</h2>" +
         '<div class="ex"><p class="ex-head">BEFORE ／ ありがちな書き方</p><div class="ex-body">' + esc(t.badExample) + "</div></div>" +
         '<div class="ex after"><p class="ex-head">AFTER ／ 書き換えた例</p><div class="ex-body">' + esc(t.goodExample) + "</div></div>" +
         (t.exampleNote ? '<p class="ex-note">' + esc(t.exampleNote) + "</p>" : "");
     }
     if (t.affinity) {
-      out += '<h2 class="sec">' + esc(R.affinityHeading || "この型が生きる場面・つまずく場面") + '</h2><p>' + esc(t.affinity) + "</p>";
+      out += '<h2 class="sec">' + esc(R.affinityHeading || "") + '</h2><p>' + esc(t.affinity) + "</p>";
     }
     return out;
   }

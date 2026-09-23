@@ -33,18 +33,20 @@
   <section id="intro" aria-labelledby="intro-title">
     <div class="seal" aria-hidden="true" style="margin:0 0 26px">結</div>
     <p class="kicker">スマホに指で書く、1分の診断</p>
-    <h1 id="intro-title">「結」の書き方診断</h1>
+    <h1 id="intro-title" tabindex="-1">「結」の書き方診断</h1>
     <p class="r01" id="c-r01">結婚相談所AGOENがつくった、無料の診断です。</p>
     <p class="sub" id="c-catch">スマホに指で「結」を一文字。そのクセを、婚活の4タイプに当てはめてみます。</p>
     <!-- R02 はキャッチのすぐ下。打消しを強調表示から離さないため -->
     <p class="disclaimer" id="c-r02">書いた「結」のクセを、AGOENが決めたルールで4つの婚活タイプに当てはめる、遊びの診断です。筆跡から性格や相性が分かるものではありません。</p>
-    <p class="hook" id="c-hook">「口」を閉じるか、すき間を残すか。線を止めるか、さっと抜くか。同じ「結」でも、書き方は人それぞれです。書き終えたら、あなたの字のどこを測ったのかを、数字と図でお見せします。</p>
     <p class="note" id="c-r03">登録不要。書いた線は、この端末の中だけで計算します。送信も保存もしません。</p>
 
     <div class="start-wrap">
       <button class="btn" id="start" type="button">書き始める（約1分）</button>
       <p class="alt-path" style="text-align:center"><a id="alt-quiz-intro" href="q.html">指で書くのが難しい方・書きたくない方は、書かずに10問で診断できます（結果の4タイプは同じです）。</a></p>
     </div>
+
+    <!-- hook は開始ボタンの下。R01〜R03・開始・R06 をファーストビューに収めるため（content.js section 1） -->
+    <p class="hook" id="c-hook">「口」を閉じるか、すき間を残すか。線を止めるか、さっと抜くか。同じ「結」でも、書き方は人それぞれです。書き終えたら、あなたの字のどこを測ったのかを、数字と図でお見せします。</p>
 
     <hr class="rule">
 
@@ -86,8 +88,8 @@
       </div>
     </div>
     <p class="note" id="w-r05" style="margin-top:10px">時間制限はありません。何度でも書き直せます。書き直した回数は結果に使いません。</p>
-    <div class="w-problem" id="w-problem" role="status" aria-live="polite" hidden></div>
-    <div class="w-btns">
+    <div class="w-problem" id="w-problem" role="status" aria-live="polite"></div>
+    <div class="w-btns" id="w-btns">
       <button class="btn btn-ghost" id="w-undo" type="button" disabled>一画戻す</button>
       <button class="btn btn-ghost" id="w-clear" type="button" disabled>全部消す</button>
     </div>

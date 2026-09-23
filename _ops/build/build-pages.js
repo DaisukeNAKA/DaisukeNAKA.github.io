@@ -113,18 +113,20 @@ const indexHtml =
   <section id="intro" aria-labelledby="intro-title">
     <div class="seal" aria-hidden="true" style="margin:0 0 26px">結</div>
     <p class="kicker">${esc(I.kicker)}</p>
-    <h1 id="intro-title">${esc(I.title)}</h1>
+    <h1 id="intro-title" tabindex="-1">${esc(I.title)}</h1>
     <p class="r01" id="c-r01">${esc(I.r01)}</p>
     <p class="sub" id="c-catch">${esc(I.catch)}</p>
     <!-- R02 はキャッチのすぐ下。打消しを強調表示から離さないため -->
     <p class="disclaimer" id="c-r02">${esc(I.r02)}</p>
-    <p class="hook" id="c-hook">${esc(I.hook)}</p>
     <p class="note" id="c-r03">${esc(I.r03)}</p>
 
     <div class="start-wrap">
       <button class="btn" id="start" type="button">${esc(I.startButton)}</button>
       <p class="alt-path" style="text-align:center"><a id="alt-quiz-intro" href="q.html">${esc(I.altLink)}</a></p>
     </div>
+
+    <!-- hook は開始ボタンの下。R01〜R03・開始・R06 をファーストビューに収めるため（content.js section 1） -->
+    <p class="hook" id="c-hook">${esc(I.hook)}</p>
 
     <hr class="rule">
 
@@ -162,8 +164,8 @@ const indexHtml =
       </div>
     </div>
     <p class="note" id="w-r05" style="margin-top:10px">${esc(W.r05)}</p>
-    <div class="w-problem" id="w-problem" role="status" aria-live="polite" hidden></div>
-    <div class="w-btns">
+    <div class="w-problem" id="w-problem" role="status" aria-live="polite"></div>
+    <div class="w-btns" id="w-btns">
       <button class="btn btn-ghost" id="w-undo" type="button" disabled>${esc(W.undo)}</button>
       <button class="btn btn-ghost" id="w-clear" type="button" disabled>${esc(W.clear)}</button>
     </div>
@@ -210,15 +212,15 @@ const qHtml =
 `
 <main>
   <section id="intro" aria-labelledby="intro-title">
-    <div id="resume-host"></div>
     <div class="seal" aria-hidden="true" style="margin:0 0 26px">結</div>
-    <h1 id="intro-title">${esc(QC.title)}</h1>
+    <h1 id="intro-title" tabindex="-1">${esc(QC.title)}</h1>
     <p class="r01">${esc(I.r01)}</p>
     <p class="sub" id="c-subtitle">${esc(QC.subtitle)}</p>
     <p class="disclaimer" id="c-r02">${esc(QC.r02)}</p>
     <p class="hook" id="c-hook">${esc(QC.hook)}</p>
     <div class="start-wrap">
       <button class="btn" id="start" type="button">${esc(QC.startButton)}</button>
+      <div id="resume-host" role="status"></div>
       <p class="note" id="c-privacy" style="margin-top:12px">${esc(QC.privacyLine)}</p>
       <p class="alt-path" style="text-align:center"><a id="to-hw-intro" href="index.html">${esc(QC.toHandwriting)}</a></p>
     </div>
@@ -299,20 +301,20 @@ C.types.forEach((t) => {
     <!-- R02 の役目の打消し。catch と basis のあいだから動かさないこと -->
     <p class="r07">${esc(C.typePageNote)}</p>
 
-    <h2 class="sec">${esc(R.summaryHeading || 'この型の進め方')}</h2>
+    <h2 class="sec">${esc(R.summaryHeading)}</h2>
     ${t.basis ? `<p class="basis">${esc(t.basis)}</p>` : ''}
     <p>${esc(t.summary)}</p>
-    <h2 class="sec">${esc(R.strengthHeading || '強みが出る場所')}</h2>
+    <h2 class="sec">${esc(R.strengthHeading)}</h2>
     <p>${esc(t.strength)}</p>
     <h2 class="sec">${esc(R.liveHeading)}</h2>
     <p>${esc(t.live)}</p>
-    <h2 class="sec">${esc(R.stumbleHeading || 'つまずきやすい場面')}</h2>
+    <h2 class="sec">${esc(R.stumbleHeading)}</h2>
     <p>${esc(t.stumble)}</p>
-    <h2 class="sec">${esc(R.exampleHeading || 'プロフィールの書き換え例')}</h2>
+    <h2 class="sec">${esc(R.exampleHeading)}</h2>
     <div class="ex"><p class="ex-head">BEFORE ／ ありがちな書き方</p><div class="ex-body">${esc(t.badExample)}</div></div>
     <div class="ex after"><p class="ex-head">AFTER ／ 書き換えた例</p><div class="ex-body">${esc(t.goodExample)}</div></div>
     <p class="ex-note">${esc(t.exampleNote)}</p>
-    <h2 class="sec">${esc(R.affinityHeading || 'この型が生きる場面・つまずく場面')}</h2>
+    <h2 class="sec">${esc(R.affinityHeading)}</h2>
     <p>${esc(t.affinity)}</p>
 
     <div class="cta t-cta">
@@ -347,11 +349,15 @@ const aboutHtml =
     <div class="seal" aria-hidden="true" style="margin:0 0 26px">結</div>
     <p class="kicker">About</p>
     <h1>この診断について</h1>
+    <p class="r01">${esc(I.r01)}</p>
     <p class="sub">${esc(A.lead)}</p>
     <hr class="rule">
     <h2 class="sec">この診断の位置づけ</h2>
     <p>${esc(A.position)}</p>
-    ${(A.sources || []).length ? `<p class="note">参考にした研究：${(A.sources || []).map(esc).join('／')}</p>` : ''}
+    ${(A.sources || []).length ? `<h3 class="sub3">参考にした研究</h3>
+    <ul class="list sources">
+        ${(A.sources || []).map((x) => `<li>${esc(x)}</li>`).join('\n        ')}
+    </ul>` : ''}
     <h2 class="sec">つくった人</h2>
     <p>${esc(A.profile)}</p>
     <div class="cta t-cta">

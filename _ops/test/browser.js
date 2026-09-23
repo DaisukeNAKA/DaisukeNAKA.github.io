@@ -67,6 +67,11 @@ function resample(poly, n) {
 /* 枠の上に、CDP のタッチ入力で字を書きます。戻り値は書く前後の scrollY。 */
 async function write(page, shape, { stepMs = 9, pauseMs = 70, holdMs = 90, shift = [0, 0] } = {}) {
   const cdp = await page.context().newCDPSession(page);
+  /* 書く画面は上端から表示するので、枠が画面の外にあるときは、人と同じように枠が見えるところまで送ってから書きます。 */
+  await page.evaluate(() => {
+    const r = document.getElementById('pad').getBoundingClientRect();
+    if (r.top < 0 || r.bottom > innerHeight) { document.getElementById('pad').scrollIntoView({ block: 'center' }); }
+  });
   const box = await page.locator('#cv').boundingBox();
   const y0 = await page.evaluate(() => window.scrollY);
   for (const poly of shape) {

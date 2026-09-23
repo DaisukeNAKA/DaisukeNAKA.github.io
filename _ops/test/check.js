@@ -92,7 +92,7 @@ need(C.typePageMeta, ['titleTemplate', 'descriptionTemplate'], 'typePageMeta');
 need(C.typePageCta, ['heading', 'body'], 'typePageCta');
 if (!isStr(C.typePageNote)) { ng('typePageNote がありません'); } else { ok('typePageNote'); }
 need(C.quiz && C.quiz.copy, ['title', 'subtitle', 'r02', 'hook', 'promise', 'startButton', 'resumeButton',
-  'privacyLine', 'gateNote', 'sharedBanner', 'sharedBannerButton', 'retakeButton', 'toHandwriting',
+  'privacyLine', 'resumeNote', 'resumeButtonTemplate', 'gateNote', 'sharedBanner', 'sharedBannerButton', 'retakeButton', 'toHandwriting',
   'resultKicker', 'themeLead', 'r07', 'r08'], 'quiz.copy');
 
 /* 妥当性チェックのコードごとに、書き直しの案内があるか */
@@ -214,6 +214,8 @@ head('■ 差し込み記号（{…}）');
     [/^hw\.features\.f12\./, ['absdeg']],
     [/^hw\.features\.f13\./, ['protPct', 'medProtPct']],
     [/^quiz\.copy\.themeLead$/, ['element']],
+    [/^quiz\.copy\.resumeNote$/, ['done']],
+    [/^quiz\.copy\.resumeButtonTemplate$/, ['next']],
     [/^share\.textTemplate$/, ['type', 'measures']],
     [/^share\.quizTextTemplate$/, ['type']],
     [/^share\.measureTemplate$/, ['short', 'brief']],
@@ -478,7 +480,7 @@ PAGES.forEach((p) => { try { html[p] = fs.readFileSync(path.join(YUI, p), 'utf8'
   }
   function esc(s) { return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
   const I = H.intro, W = H.write, QC = C.quiz.copy;
-  order('index.html', [I.title, I.r01, I.catch, I.r02, I.hook, I.r03, I.startButton, I.altLink], '導入：title→R01→catch→R02→hook→R03→開始→R06');
+  order('index.html', [I.title, I.r01, I.catch, I.r02, I.r03, I.startButton, I.altLink, I.hook], '導入：title→R01→catch→R02→R03→開始→R06→hook');
   order('index.html', [W.heading, I.altLink, I.r03, W.r04, W.sizeHint, { raw: 'id="cv"' }, W.r05], '書く画面：見出し→R06→R03→R04→大きさ→キャンバス→R05');
   order('q.html', [QC.title, I.r01, QC.subtitle, QC.r02, QC.hook, QC.startButton, QC.privacyLine, QC.toHandwriting], '導入：title→R01→subtitle→R02→hook→開始→保存の説明→手書きへ');
   if (html['q.html'].indexOf(esc(QC.gateNote)) < 0 || html['q.html'].indexOf(esc(H.gate.note)) >= 0) {

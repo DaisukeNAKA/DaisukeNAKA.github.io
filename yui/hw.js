@@ -69,7 +69,8 @@
   function resize() {
     if (!cv || !pad) { return; }
     var r = pad.getBoundingClientRect();
-    var s = Math.max(120, Math.round(r.width));
+    /* 実際の枠の幅に合わせます（下限で広げると、拡大表示のときに枠からはみ出します）。 */
+    var s = Math.max(40, Math.round(r.width));
     var dpr = window.devicePixelRatio || 1;
     side = s;
     cv.width = Math.round(s * dpr);
@@ -110,9 +111,11 @@
     var r = cv.getBoundingClientRect();
     return { x: (ev.clientX - r.left) / side, y: (ev.clientY - r.top) / side, t: ev.timeStamp };
   }
+  /* 案内の欄は常に読み上げの対象に置いたまま、中身だけを入れ替えます。表示と同時に中身が入った
+     aria-live の欄は、読み上げられないことがあるためです。空のときは CSS で高さを 0 にします。 */
   function problem(msg) {
     var n = $("w-problem");
-    if (n) { n.textContent = msg || ""; n.hidden = !msg; }
+    if (n) { n.hidden = false; n.textContent = msg || ""; }
   }
 
   if (cv) {
@@ -184,7 +187,9 @@
     var scaled = S.strokes.map(function (st) {
       return { points: st.points.map(function (p) { return { x: p.x * ANALYSIS_SIDE, y: p.y * ANALYSIS_SIDE, t: p.t }; }) };
     });
-    try { return HW.analyze(scaled, { side: ANALYSIS_SIDE }); }
+    /* とめの印（marks.stops）は、較正の f5 の中央値をしきい値にします。渡さないとエンジン既定の STOP_MS になり、
+       f5 の行の「止めてから離した画」の数が、同じ行の中央値と食い違います。 */
+    try { return HW.analyze(scaled, { side: ANALYSIS_SIDE, cal: CAL }); }
     catch (e) { return null; }
   }
 
@@ -197,16 +202,17 @@
     screen("write");
     window.scrollTo(0, 0);
     resize();
-    /* 枠を画面の中央へ。最上部のまま書き始めると、下向きの画でアプリの「引っ張って更新」が
-       反応することがあるためです。 */
-    try { pad.scrollIntoView({ block: "center" }); } catch (e) {}
+    /* 画面は上端から見せます。枠を中央へ送ると、枠の直上に置いた R06（書かずに診断）と R03・R04 が
+       画面の外へ押し出されるためです。「引っ張って更新」は、枠の touch-action:none と touchstart の
+       preventDefault、body の overscroll-behavior で止めています。 */
     try { $("w-heading").focus({ preventScroll: true }); } catch (e) {}
   }
 
   if (!Y.caps.pointer) {
     /* Pointer Events が無い古い環境では、書いた線を正しく測れないため10問版へ案内します。 */
     if ($("w-nopointer")) { $("w-nopointer").hidden = false; }
-    if ($("pad-wrap")) { $("pad-wrap").hidden = true; }
+    /* 書けない画面で「書き順は自由」「何度でも書き直せます」や押せないボタンを並べないよう、書くための部品はまとめて隠します。 */
+    ["pad-wrap", "w-r04", "w-size", "w-r05", "w-btns", "w-done"].forEach(function (id) { if ($(id)) { $(id).hidden = true; } });
   }
 
   /* ========== 属性設問（書いたあとに1問だけ。型には影響しません） ========== */
@@ -240,7 +246,10 @@
     var scored = feats ? HW.score(feats, CAL) : null;
     if (!scored) { nv.nav("#/write"); return; }
     var code = HW.encodeShare(scored, feats, drawnMarks());
-    var prev = readLast();
+    /* 前回との比較は、今回1回目を書く前に端末にあった結果と比べます。2回目のあとに readLast() を読むと、
+       数秒前の1回目の結果と比べてしまうためです。 */
+    if (!S.a2) { S.sessionPrev = readLast(); }
+    var prev = S.sessionPrev || null;
     S.current = { code: code, key: scored.key, scored: scored, feats: feats,
                   prevKey: prev && prev.k !== scored.key ? prev.k : null };
     Y.store.set(LKEY, JSON.stringify({ k: scored.key, t: Date.now() }));
@@ -252,14 +261,14 @@
     if (!raw) { return null; }
     try {
       var o = JSON.parse(raw);
-      if (o && Y.typeOf(o.k) && o.t && (Date.now() - o.t) < 30 * 24 * 3600 * 1000) { return o; }
+      if (o && Y.typeOf(o.k) && o.t && (Date.now() - o.t) >= 0 && (Date.now() - o.t) < 30 * 24 * 3600 * 1000) { return o; }
     } catch (e) {}
     return null;
   }
 
   /* ========== 測定値の文面（content.js section 5 の表どおりに選ぶ） ========== */
   function cf(fk) { return (CAL && CAL.features && CAL.features[fk]) || {}; }
-  function r1(x) { return String(Math.round(x * 10) / 10); }
+  function r1(x) { return (Math.round(x * 10) / 10).toFixed(1); }
   function r2(x) { return (Math.round(x * 100) / 100).toFixed(2); }
   function pct(x) { return String(Math.round(x * 100)); }
   function stopCounts(marks) {
@@ -268,15 +277,21 @@
     return { stops: n, total: st.length };
   }
   /* ctx: {twoPass, marks} … 自分の結果（src "self"）のとき */
+  /* 測れなかった特徴も行として残し、measure.none を出します（section 5）。シェア文・画像には使いません（brief は空）。 */
+  function rowNone(fk) {
+    var m = (FT[fk] && FT[fk].measure) || {};
+    return m.none ? { fk: fk, measure: m.none, brief: "", none: true } : null;
+  }
   function rowSelf(fk, feats, ctx) {
     var def = FT[fk];
+    if (!def) { return null; }
     var v = feats[fk];
-    if (!def || v == null) { return null; }
+    if (v == null) { return rowNone(fk); }
     var m = def.measure || {}, b = def.brief || {}, key = null, tk = {};
     var med = cf(fk).median;
     switch (fk) {
       case "f1": case "f9": case "f10":
-        if (!v.state) { return null; }
+        if (!v.state) { return rowNone(fk); }
         tk.ratio = r2(v.ratio);
         key = (v.state === "closed" && tk.ratio === "0.00" && m.closedTouch) ? "closedTouch" : v.state;
         break;
@@ -292,7 +307,7 @@
         break;
       case "f5":
         var sc = stopCounts(ctx.marks);
-        if (!sc.total) { return null; }
+        if (!sc.total) { return rowNone(fk); }
         tk.stops = String(sc.stops); tk.total = String(sc.total);
         tk.ms = String(Math.round(v)); tk.medMs = String(Math.round(med));
         key = (sc.stops > 0 ? "value" : "valueNone") + (sc.total === 1 ? "1" : "") + (ctx.twoPass ? "Two" : "");
@@ -320,7 +335,7 @@
       default:
         return null;
     }
-    if (!m[key]) { return null; }
+    if (!m[key]) { return rowNone(fk); }
     return { fk: fk, measure: fill(m[key], tk), brief: fill(b[key] || "", tk) };
   }
   /* リンク・再読み込みの表示（書いた線も特徴量も無く、decodeShare の disp だけが分かるとき） */
@@ -348,14 +363,16 @@
   var REF = ["f9", "f10", "f11", "f12", "f13"];
   function rowHtml(row, label) {
     var def = FT[row.fk];
+    /* 並びは section 4 のとおり「測った事実 → 慣習の読み → 使い方のラベル」。測れなかった行には読みを付けません。 */
     return '<li class="m-row" data-f="' + row.fk + '">' +
-      '<p class="m-name">' + esc(def.name) + (label ? ' <span class="m-use">' + esc(label) + "</span>" : "") + "</p>" +
+      '<p class="m-name">' + esc(def.name) + "</p>" +
       '<p class="m-val">' + esc(row.measure) + "</p>" +
-      (def.reading ? '<p class="m-read">' + esc(def.reading) + "</p>" : "") +
+      (def.reading && !row.none ? '<p class="m-read">' + esc(def.reading) + "</p>" : "") +
+      (label ? '<p class="m-use-line"><span class="m-use">' + esc(label) + "</span></p>" : "") +
     "</li>";
   }
   function shortOf(row) {
-    if (!row || !row.brief) { return ""; }
+    if (!row || row.none || !row.brief) { return ""; }
     return fill(SH.measureTemplate || "{short}：{brief}", { short: FT[row.fk].short || FT[row.fk].name, brief: row.brief });
   }
   function joinMeasures(list, withEnd) {
@@ -453,14 +470,16 @@
     var theme = themeFor(hl), hlText = "";
     if (hl && theme && FT[hl.feature]) {
       var hlMeasure = null;
-      if (self && rowBy[hl.feature]) { hlMeasure = rowBy[hl.feature].measure; }
+      if (self && rowBy[hl.feature] && !rowBy[hl.feature].none) { hlMeasure = rowBy[hl.feature].measure; }
       else if (!self) {
         if (hl.feature === "f2" || hl.feature === "f5") { hlMeasure = rowBy[hl.feature] ? rowBy[hl.feature].measure : null; }
         else if (hl.feature === "f9" || hl.feature === "f10") { hlMeasure = (FT[hl.feature].brief || {}).open || null; }
       }
       hlText = hlMeasure
-        ? fill(self ? RS.highlightTemplate : (RS.highlightTemplate), { feature: FT[hl.feature].name, measure: hlMeasure, element: theme.label })
+        ? fill(RS.highlightTemplate, { feature: FT[hl.feature].name, measure: hlMeasure, element: theme.label })
         : fill(RS.highlightTemplateLink, { feature: FT[hl.feature].name, element: theme.label });
+      /* 自分の結果で値を行に出せなかったときは、Link 版の「結果のリンクには…入っていません」が事実と違うので外します。 */
+      if (self && !hlMeasure) { hlText = hlText.replace(/（結果のリンク[^）]*）/, ""); }
     }
 
     /* --- シェア文の測定値（m1＝いちばん特徴の行、m2＝口の左上） --- */
@@ -488,10 +507,6 @@
     parts.push('<p class="r08">' + esc(RS.r08) + "</p>");
     parts.push('<p class="r-tag">' + esc(t.tagline) + "</p>");
     parts.push('<p class="r-catch">' + esc(t.catch) + "</p>");
-    if (self && S.current && S.current.prevKey && Y.typeOf(S.current.prevKey)) {
-      parts.push('<p class="changed-note">' + esc(fill(isLean(lean) ? RS.changedTemplate : RS.changedTemplateFar,
-        { prev: Y.typeOf(S.current.prevKey).name, now: t.name })) + "</p>");
-    }
 
     var calNote = (CAL && /^synthetic/.test(String(CAL.version || "")))
       ? RS.calibrationNote
@@ -519,6 +534,11 @@
       aria: fill(ariaTpl, { type: t.name, toward: toward ? toward.name : "" }),
       top: RS.mapAxes && RS.mapAxes.top, bottom: RS.mapAxes && RS.mapAxes.bottom,
       left: RS.mapAxes && RS.mapAxes.left, right: RS.mapAxes && RS.mapAxes.right }) + "</div>");
+    /* 前回との比較は、点を描いたマップのすぐ下に置きます（「境界の近く」と書く文を、点の位置と並べて読めるように）。 */
+    if (self && S.current && S.current.prevKey && Y.typeOf(S.current.prevKey)) {
+      parts.push('<p class="changed-note">' + esc(fill(isLean(lean) ? RS.changedTemplate : RS.changedTemplateFar,
+        { prev: Y.typeOf(S.current.prevKey).name, now: t.name })) + "</p>");
+    }
     parts.push('<p class="not-used">' + esc(RS.notUsed) + "</p>");
 
     /* 婚活での生かし方 */
@@ -576,6 +596,9 @@
 
     cta.bind();
     if (share) { share.bind(); }
+    if (!shared) {
+      try { history.replaceState({ yuiOwn: (S.current && S.current.code) || (location.hash || "").replace(/^#\/r\//, "") }, "", location.href); } catch (e) {}
+    }
     Y.on("retake", restart);
     Y.on("own", function () { location.hash = ""; restart(); });
     Y.on("write-2", function () { nv.nav("#/write2"); });
@@ -696,7 +719,10 @@
       try { dec = HW.decodeShare(code); } catch (e) { dec = null; }
       if (!dec || !Y.typeOf(dec.key)) { nv.replaceHash("#/"); screen("intro"); return; }
       var last = readLast();
-      render({ src: (last && last.k === dec.key) ? "reload" : "shared", key: dec.key, dec: dec });
+      /* 端末に保存できない環境（保存がブロックされている等）でも、自分の結果を開き直したときに
+         「ほかの方が共有した結果です」と出さないよう、この履歴の項目に付けた印（history.state）も見ます。 */
+      var own = !!(history.state && history.state.yuiOwn === code);
+      render({ src: (own || (last && last.k === dec.key)) ? "reload" : "shared", key: dec.key, dec: dec });
       return;
     }
     screen("intro");

@@ -184,8 +184,8 @@ window.YUI_CONTENT = {
   typeColors: {
     sekkei:  { color: "#2e4a62", colorDark: "#7aa8cc" },
     kyomei:  { color: "#6b5b8e", colorDark: "#ab9dd0" },
-    suishin: { color: "#c8453c", colorDark: "#e8776c" },
-    chokkan: { color: "#2f7d5d", colorDark: "#63bb92" }
+    suishin: { color: "#b73f37", colorDark: "#e8776c" },
+    chokkan: { color: "#2b7556", colorDark: "#63bb92" }
   },
 
   /* 運営者表記（フッター）。空の項目は表示されません。 */
@@ -750,7 +750,9 @@ window.YUI_HW_COPY = {
 
   /* ---------------------------------------------------------------------
    * 1. ファーストビュー
-   *    表示順は title → r01 → catch → r02 → hook → r03 → startButton → altLink。
+   *    表示順は title → r01 → catch → r02 → r03 → startButton → altLink → hook。
+   *    hook を開始ボタンの下に置くのは、R01〜R03・開始ボタン・R06 を、スクロールせずに見える位置に収めるためです
+   *    （375×667 の画面で、hook を上に置くと R06 が折り目の下に出ました）。
    *    altLink（R06）は主ボタンと同じ画面の中に置き、読み上げ順でもキャンバスより前にします
    *    （書く画面では、キャンバスの前にもう一度出します）。
    *    R02 はキャッチのすぐ下に置きます。打消し表示は強調表示から離すと
@@ -2165,6 +2167,9 @@ window.YUI_HW_COPY = {
     startButton: "10問に答える（約3分）",
     /* quiz.js は後ろに「（◯問目から）」を付けて出します */
     resumeButton: "続きから再開する",
+    /* 途中の回答が残っているときに、開始ボタンの下へ出す一文とボタン。{done}＝答え終えた問数、{next}＝次の問番号 */
+    resumeNote: "前回は{done}問目まで回答済みです。続きから再開できます。",
+    resumeButtonTemplate: "続きから再開する（{next}問目から）",
     /* 1日を過ぎた途中の回答は、次に開いたときに消す実装です（quiz.js の boot）。
        quiz.js は結果画面のアドレス（q.html#/r/<5文字>）に、属性の1問を含む11問分の答えを記号で入れます。
        アドレスをそのまま貼ると答え（婚活の段階を含む）が相手に渡るので、そのことと、共有のボタンを使えば

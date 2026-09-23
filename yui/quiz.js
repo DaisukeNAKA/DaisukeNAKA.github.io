@@ -110,8 +110,11 @@
   /* ========== 状態 ========== */
   var answers = new Array(TOTAL_A);
   for (var _i = 0; _i < TOTAL_A; _i++) { answers[_i] = -1; }
-  var idx = 0, busy = false, viewSource = "self";
+  var idx = 0, busy = false, shown = false;
+  /* 1日を過ぎて消した記録が、開いた結果のアドレスと同じだったとき、その結果を本人のものとして扱うための控え */
+  var staleCode = null;
   var nv;
+  var TITLE = (C.quizMeta && C.quizMeta.title) || "書かずに受ける10問版 ｜「結」の書き方診断";
 
   function firstUnanswered() {
     for (var i = 1; i <= N; i++) { if (answers[i] < 0) { return i - 1; } }
@@ -148,6 +151,7 @@
       host.appendChild(b);
     });
     screen("gate");
+    document.title = TITLE;
     try { $("g-text").focus({ preventScroll: true }); } catch (e) {}
     window.scrollTo(0, 0);
     busy = false;
@@ -186,6 +190,7 @@
     void st.offsetWidth;
     st.classList.add("fade");
     screen("quiz");
+    document.title = TITLE;
     try { $("q-text").focus({ preventScroll: true }); } catch (e) {}
     window.scrollTo(0, 0);
     busy = false;
@@ -297,57 +302,84 @@
     if (own) {
       own.addEventListener("click", function (e) { e.preventDefault(); restart(); });
     }
-    /* 共有された他人の結果を、閲覧者の保存データとして書き込まないこと。 */
-    if (!shared) { save(); }
+    /* 保存するのは答えたとき（pick）だけです。結果を開き直したり戻ったりしただけで書き直すと、
+       「もう一度受ける」で消した答えや、1日たって消した答えが、また端末に残ってしまいます。
+       自分の結果には、この履歴の項目に印を付けます。保存がブロックされた環境で開き直したときや、
+       「もう一度受ける」のあとに戻ったときも、ほかの方の結果として扱わないためです。 */
+    if (!shared) {
+      try { history.replaceState({ yuiOwnQ: encodeAnswers(data) }, "", location.href); } catch (e) {}
+    }
   }
 
   function restart() {
     Y.store.del(SKEY);
-    var rh = $("resume-host");
-    if (rh) { rh.innerHTML = ""; }
     for (var k = 0; k < TOTAL_A; k++) { answers[k] = -1; }
     idx = 0;
-    viewSource = "self";
+    staleCode = null;
     nv.go("#/gate");
+  }
+
+  /* 途中の回答が残っているときの案内。導入を出すたびに、いまの回答数で描き直します。 */
+  function renderResume() {
+    var host = $("resume-host");
+    var f = firstUnanswered();
+    var can = answers[0] >= 0 && f > 0 && f < N;
+    Y.setText("start", can ? fill(QC.resumeButtonTemplate, { next: f + 1 }) : QC.startButton);
+    if (!host) { return; }
+    host.innerHTML = can
+      ? '<p class="note resume-note">' + esc(fill(QC.resumeNote, { done: f })) + "</p>"
+      : "";
+  }
+  function isOwn(code) {
+    if (history.state && history.state.yuiOwnQ === code) { return true; }
+    if (staleCode && staleCode === code) { return true; }
+    return answers.indexOf(-1) < 0 && encodeAnswers(answers) === code;
   }
 
   /* ========== ルーティング ========== */
   function route() {
     var h = location.hash || "";
-    if (h === "#/gate") { renderGate(); return; }
+    if (h === "#/gate") { renderGate(); shown = true; return; }
     var m = h.match(/^#\/q\/(\d+)$/);
     if (m) {
-      if (answers[0] < 0) { nv.replaceHash("#/gate"); renderGate(); return; }
       var n = parseInt(m[1], 10);
-      if (!(n >= 1 && n <= N)) { nv.replaceHash("#/"); screen("intro"); return; }
+      /* 途中の回答が無いまま途中の問のアドレスを開いたときは、属性の1問ではなく導入から始めます。 */
+      if (answers[0] < 0 || !(n >= 1 && n <= N)) { nv.replaceHash("#/"); showIntro(); return; }
       var allowed = Math.min(n - 1, firstUnanswered());
       idx = allowed;
       if (allowed !== n - 1) { nv.replaceHash("#/q/" + (allowed + 1)); }
       renderQuestion();
+      shown = true;
       return;
     }
     m = h.match(R_RE);
     if (m) {
       var a = decodeAnswers(m[1]);
-      if (!a) { nv.replaceHash("#/"); screen("intro"); return; }
-      /* 他人の共有リンクを開いただけで、閲覧者自身の途中回答を壊さないこと。 */
-      if (viewSource !== "shared") { answers = a; }
-      renderResult(viewSource, a);
+      if (!a) { nv.replaceHash("#/"); showIntro(); return; }
+      /* 自分の結果かどうかは、開いたコードごとに決めます。ほかの方の共有リンクを開いただけで、
+         閲覧者自身の途中回答を壊さないこと。 */
+      var own = isOwn(m[1]);
+      if (own) { answers = a; }
+      renderResult(own ? "self" : "shared", a);
+      shown = true;
       return;
     }
+    showIntro();
+  }
+  function showIntro() {
     screen("intro");
-    document.title = (C.quizMeta && C.quizMeta.title) || "書かずに受ける10問版 ｜「結」の書き方診断";
-    var f0 = firstUnanswered();
-    var label = (answers[0] >= 0 && f0 > 0 && f0 < N) ? (QC.resumeButton + "（" + (f0 + 1) + "問目から）") : QC.startButton;
-    Y.setText("start", label);
+    document.title = TITLE;
+    renderResume();
     window.scrollTo(0, 0);
+    /* 別の画面から戻ってきたときは、見出しに読み上げの位置を戻します（最初の表示では動かしません）。 */
+    if (shown) { try { $("intro-title").focus({ preventScroll: true }); } catch (e) {} }
+    shown = true;
   }
   nv = Y.makeNav(route);
   window.addEventListener("hashchange", route);
 
   function onStart() {
     var f = firstUnanswered();
-    viewSource = "self";
     /* 完走済みのデータが残っている再訪では、最終問ではなく最初からやり直します。 */
     if (f >= N) { restart(); return; }
     if (answers[0] < 0) { nv.go("#/gate"); return; }
@@ -357,38 +389,19 @@
   Y.on("g-back", function () { nv.nav("#/"); });
 
   (function boot() {
-    var mh = (location.hash || "").match(R_RE);
-    if (mh) {
-      /* 保存済みの自分の回答と一致するコードなら、リロードでも自分の結果として扱います。 */
-      var mine = false, sv = null;
-      try { sv = JSON.parse(Y.store.get(SKEY) || "null"); } catch (e) { sv = null; }
-      if (sv && sv.v === 3 && sv.a && sv.a.length === TOTAL_A && sv.a.indexOf(-1) < 0) {
-        mine = (encodeAnswers(sv.a) === mh[1]);
-        if (mine) { answers = sv.a; }
-      }
-      viewSource = mine ? "self" : "shared";
-      route();
-      return;
-    }
     var raw = Y.store.get(SKEY);
     if (raw) {
-      try {
-        var st = JSON.parse(raw);
-        var fresh = st && st.t && (Date.now() - st.t) < 24 * 3600 * 1000;
-        if (st && st.v === 3 && st.a && st.a.length === TOTAL_A && fresh) {
-          answers = st.a;
-          var f = firstUnanswered();
-          if (answers[0] >= 0 && f > 0 && f < N) {
-            $("resume-host").innerHTML =
-              '<div class="resume-bar">前回は' + f + "問目まで回答済みです。続きから再開できます。" +
-              '<button class="btn" id="resume" type="button">' + esc(QC.resumeButton) + "（" + (f + 1) + "問目から）</button></div>";
-            Y.on("resume", function () { nv.go("#/q/" + (f + 1)); });
-          }
-        } else if (!fresh) {
-          Y.store.del(SKEY);
-          for (var k = 0; k < TOTAL_A; k++) { answers[k] = -1; }
-        }
-      } catch (e) { Y.store.del(SKEY); }
+      var st = null;
+      try { st = JSON.parse(raw); } catch (e) { st = null; }
+      var valid = st && st.v === 3 && st.a && st.a.length === TOTAL_A;
+      var fresh = valid && st.t && (Date.now() - st.t) >= 0 && (Date.now() - st.t) < 24 * 3600 * 1000;
+      if (fresh) {
+        answers = st.a;
+      } else {
+        /* 1日を過ぎた回答（や壊れた記録）は、どのアドレスで開いても、ここで消します（privacyLine・footer.r11 の約束）。 */
+        if (valid && st.a.indexOf(-1) < 0) { staleCode = encodeAnswers(st.a); }
+        Y.store.del(SKEY);
+      }
     }
     route();
   })();
