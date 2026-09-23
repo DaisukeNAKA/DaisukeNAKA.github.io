@@ -318,6 +318,11 @@ head('■ 妥当性チェック（診断に進ませない入力）');
   const leak = Object.keys(invalid).filter((k) => invalid[k].ok || Object.values(invalid[k].feats).some((v) => v !== null) ||
     HW.score(invalid[k].feats, CAL) !== null || HW.score(invalid[k], CAL) !== null);
   check(!leak.length, `妥当でない字（${Object.keys(invalid).length} 種。どの画にも対応しない短い線12本を含む）は、測定値がすべて null で、score() も null`, J(leak));
+  const markLeak = Object.keys(invalid).filter((k) => {
+    const m = invalid[k].marks;
+    return !m || m.kouUL !== null || m.kouLL !== null || m.kouLR !== null || m.gap !== null || m.slant !== null || m.stops.length !== 0 || typeof m.stopMs !== 'number';
+  });
+  check(!markLeak.length, '妥当でない字は、結果パネル用の印も空（口の3点・すき間・横画の線は null、とめの印は 0 個）', J(markLeak));
   const good0 = run({ seed: 1 });
   check(J(HW.score(good0, CAL)) === J(HW.score(good0.feats, CAL)), 'score() には analyze() の結果をそのまま渡してもよい（ok なら feats と同じ採点）');
 
@@ -433,34 +438,51 @@ head('■ 迷いタップ・なぐり書き（どの画にも対応しないイ�
   check(!strayBad.length, `字の外の 2〜20% の迷い線（${strayN} 通り：角・辺・字のすぐ上下 × 長さ × 書く前・途中・あと）で、測定値が黙って変わらない` +
     '（インクから 0.06 以上離れた 10% 以下は測定値も同じ、それ以外は同じか extraInk）', strayBad.slice(0, 4).join('\n         '));
 
-  // 字のすぐ外（インクから 0.03〜）の 20% の迷い線が、本物の画をお手本の画から押しのけない（糸の左・士の上など）。
-  // キャンバス全体の格子（10×10）× 4 方向 × 書く前・あと。どれも「測定値がまったく同じ」か「extraInk だけで弾く」
+  // 字のすぐ外の 20% の迷い線が、本物の画をお手本の画から押しのけない（以前の例）
   const repro = SY.synth({ seed: 1 }), r0 = HW.analyze(repro, { side: 320 });
   const r1 = HW.analyze(repro.concat([SY.stray(320, 0.25, 0.25, 1, -1, 0.2, lastT(repro) + 400, 240)]), { side: 320 });
   check(r0.ok && (J(r1.problems) === J(['extraInk']) || J(r1.feats) === J(r0.feats)),
     `字の左上、インクから 0.06 の 20% の迷い線（以前は画 1 を取って推進型→設計型）: ${r1.ok ? '測定値は同じ' : J(r1.problems)}`);
-  const gridW = [{ seed: 1, side: 320 }, { seed: 2, side: 320 }, CALS0.writing(CALS0.person(SY.mulberry32(606)), SY.mulberry32(1), 31000)];
-  const gridBad = [];
-  let gridN = 0;
-  gridW.forEach((w) => {
+  // 字のそば（インクから 0.03〜0.08。線分どうしの正確な距離）の迷い線：長さ 2〜20%、向きはでたらめ、書く前・途中（画と画の間）・あと。
+  // 字の内側（糸と吉の間・口のそば）も含みます。本物の画をお手本の画から押しのける・画の一部として足される・画と平行に並んで
+  // 画を取り合う、のどれでも、測定値が黙って変わらない（どれも「測定値がまったく同じ」か、弾く）。
+  // 以前は、画と平行に 0.03〜0.05 離れた迷い線が画を取り、口の開閉・連綿・すき間が黙って変わっていた（型が変わる例もあった）
+  const nbW = [], rn = SY.mulberry32(5150), rr = SY.mulberry32(6160);
+  for (let i = 0; i < 8; i++) nbW.push(CALS0.writing(CALS0.person(rn), SY.mulberry32(700 + i), 32000 + i));
+  const nbBad = [], nbCodes = {};
+  let nbN = 0, nbRej = 0;
+  nbW.forEach((w) => {
     const st = SY.synth(w), side = w.side, a = HW.analyze(st, { side });
     if (!a.ok) return;
-    for (let gx = 0.05; gx < 0.96; gx += 0.1) for (let gy = 0.05; gy < 0.96; gy += 0.1) [[1, 0], [0, 1], [1, 1], [1, -1]].forEach(([dx, dy]) => ['前', 'あと'].forEach((when) => {
-      const len = 0.2, n = Math.hypot(dx, dy);
-      let m = Infinity;
-      for (let q = 0; q <= 10; q++) {
-        const px = gx + dx / n * len * q / 10, py = gy + dy / n * len * q / 10;
-        st.forEach((x) => x.points.forEach((pp) => { m = Math.min(m, Math.hypot(pp.x / side - px, pp.y / side - py)); }));
+    const inkPts = [].concat(...st.map((x) => x.points.map((p) => [p.x / side, p.y / side])));
+    let got = 0, tries = 0;
+    while (got < 45 && tries < 3000) {
+      tries++;
+      const base = inkPts[Math.floor(rr() * inkPts.length)], off = 0.03 + 0.05 * rr(), oa = rr() * 2 * Math.PI;
+      const len = 0.02 + 0.18 * rr(), ang = rr() * 2 * Math.PI, dx = Math.cos(ang), dy = Math.sin(ang);
+      const x0 = base[0] + Math.cos(oa) * off, y0 = base[1] + Math.sin(oa) * off;
+      if ([x0, y0, x0 + dx * len, y0 + dy * len].some((v) => v < 0.01 || v > 0.99)) continue;
+      const when = Math.floor(rr() * 3);
+      let t0, dur = 80 + 300 * rr();
+      if (when === 0) t0 = st[0].points[0].t - 2000;
+      else if (when === 2) t0 = lastT(st) + 500;
+      else {
+        const gi = 1 + Math.floor(rr() * (st.length - 1)), tA = st[gi - 1].points.slice(-1)[0].t, tB = st[gi].points[0].t;
+        dur = Math.min(dur, (tB - tA) * 0.6); t0 = tA + (tB - tA) * 0.2;
       }
-      if (m < 0.03) return;
-      gridN++;
-      const tt = when === '前' ? st[0].points[0].t - 640 : lastT(st) + 400;
-      const b = HW.analyze(st.concat([SY.stray(side, gx, gy, dx, dy, len, tt, 240)]), { side });
-      const same = b.ok && J(b.feats) === J(a.feats) && b.totalMs === a.totalMs;
-      if (!same && J(b.problems) !== J(['extraInk'])) gridBad.push(`seed ${w.seed} (${gx.toFixed(2)},${gy.toFixed(2)}) ${dx},${dy} ${when}: ${b.ok ? '特徴が変わる' : J(b.problems)}`);
-    }));
+      const sp = SY.stray(side, x0, y0, dx, dy, len, t0, dur), md = inkDist(sp, st, side);
+      if (md < 0.03 || md > 0.08) continue;
+      got++; nbN++;
+      const b = HW.analyze(st.concat([sp]), { side });
+      if (!b.ok) { nbRej++; b.problems.forEach((c) => { nbCodes[c] = (nbCodes[c] || 0) + 1; }); continue; }
+      if (J(b.feats) !== J(a.feats)) {
+        nbBad.push(`seed ${w.seed} (${x0.toFixed(3)},${y0.toFixed(3)}) 向き ${(ang * 180 / Math.PI).toFixed(0)}° ${(len * 100).toFixed(1)}% 距離 ${md.toFixed(3)} ` +
+          `${['前', '途中', 'あと'][when]}: ${HW.FEATURES.filter((k) => J(a.feats[k]) !== J(b.feats[k])).join(',')}`);
+      }
+    }
   });
-  check(!gridBad.length, `インクから 0.03 以上離れた 20% の迷い線（格子の ${gridN} 通り）で、測定値が黙って変わらない（同じか extraInk）`, gridBad.slice(0, 4).join('\n         '));
+  check(nbN >= 300 && !nbBad.length, `字のそば（インクから 0.03〜0.08）の 2〜20% の迷い線 ${nbN} 通り（向き・時刻はでたらめ）で、測定値が黙って変わらない` +
+    `（同じ ${nbN - nbRej}・弾く ${nbRej} ${J(nbCodes)}）`, nbBad.slice(0, 4).join('\n         '));
 
   // 動かさずに触れて離しただけのタップ（静止中の pointermove の 0.2〜0.3px の揺れつき）は、道のりが一辺の 1% を超えても
   // 画数に数えない（広がりで測る）
@@ -481,6 +503,26 @@ head('■ 迷いタップ・なぐり書き（どの画にも対応しないイ�
     }
   });
   check(!jBad.length, '揺れつきの静止タップ 5 個（150〜300ms、120〜240Hz）は画数に数えず、測定値も変わらない', jBad.slice(0, 3).join(' / '));
+
+  // 字の上に落ちた 1〜2%（TAP_LEN 未満）のタップは、お手本の画そのもの（組の先頭）にも画の一部にもならない。
+  // 画のどの点の上でも（続け書きの糸の 1-2 の上も）、書いたあとに置いたタップで測定値は変わらない。
+  // 以前は、続け書きの組の端の画を取り返しでタップが取り、連綿の数や縦横比が黙って変わっていた
+  const tapsBad = [];
+  let tapsN = 0;
+  // 3 人（続け書きなし・糸の 1-2・糸の 1-2 と口の 11-12）の、すべての画のすべての点の上に1つずつ（大きさ 1.2%・1.9% を交互、向きも順に変える）
+  [{ seed: 1 }, { seed: 3, renmen: [[1, 2]] }, { seed: 4, renmen: [[1, 2], [11, 12]] }].forEach((wp) => {
+    const st = SY.synth(wp), a = HW.analyze(st, { side: 320 }), T = lastT(st);
+    if (!a.ok) { tapsBad.push(`seed ${wp.seed}: 元の字が弾かれる`); return; }
+    st.forEach((x, si) => x.points.forEach((p, pi) => {
+      const ext = pi % 2 ? 0.019 : 0.012, ang = pi * Math.PI / 4, d = ext * 320;
+      const tp = { points: [0, 1, 2, 3].map((q) => ({ x: p.x + Math.cos(ang) * d * q / 3, y: p.y + Math.sin(ang) * d * q / 3, t: T + 300 + q * 10 })) };
+      tp.points.push({ x: tp.points[3].x, y: tp.points[3].y, t: T + 350 });
+      const b = HW.analyze(st.concat([tp]), { side: 320 });
+      tapsN++;
+      if (!b.ok || J(b.feats) !== J(a.feats)) tapsBad.push(`seed ${wp.seed} ${si + 1}本目の ${pi} 点目 ${ext * 100}%: ${b.ok ? HW.FEATURES.filter((k) => J(a.feats[k]) !== J(b.feats[k])).join(',') : J(b.problems)}`);
+    }));
+  });
+  check(!tapsBad.length, `画のすべての点の上に置いた 1〜2% のタップ（${tapsN} 通り。続け書きの 1-2・11-12 の上も）でも、測定値は変わらない`, tapsBad.slice(0, 4).join(' / '));
 }
 
 /* ============================================================ 口 */
@@ -518,7 +560,7 @@ head('■ 糸と吉のすき間（f2）');
     // お手本の字幅は 0.75。吉を 0.04 動かすと、字幅も伸びるので約 0.04/0.79 ≒ 0.05 増える
     // （端は 90%点・10%点で測るので、少し小さめ 0.04〜0.05 に出る）
     const step = (v[3] - v[1]) / 2;
-    if (Math.abs(step - 0.05) > 0.015) bad.push(`seed ${seed}: 0.04 ずらしたときの増え方 ${step.toFixed(3)}（期待 0.05±0.015）`);
+    if (Math.abs(step - 0.05) > 0.015 + 1e-9) bad.push(`seed ${seed}: 0.04 ずらしたときの増え方 ${step.toFixed(3)}（期待 0.05±0.015）`);
   });
   check(!bad.length, '吉を右へずらすと f2 が比例して増える', bad.slice(0, 4).join('\n         '));
   const neg = run({ seed: 1, gapShift: -0.15 });
@@ -539,6 +581,39 @@ head('■ 右上がり（f12、字全体の回転は差し引く）');
   check(s0.every((v) => Math.abs(v) <= 1), '水平に書けば f12 ≈ 0°', J(s0));
   const r6 = SEEDS.map((seed) => run(Object.assign({ seed, rotDeg: 6 }, q)).feats.f12);
   check(r6.every((v) => Math.abs(v) <= 1), 'スマホを斜めに持って字全体が 6° 回っても、右上がりには数えない', J(r6));
+  // 字全体を ±25° 傾けても、右上がり f12 には回転が入らない（字全体の回転の推定 charTilt を引く）。
+  // 以前は縦画 4・8 の傾きを引いていて、25° を超えて倒れた縦画を捨てたため、25° では 4 人に 1 人で 5° 超ずれた
+  const CALT = require('./hw-calibration.js'), rt = SY.mulberry32(4141), tiltW = [];
+  for (let i = 0; i < 40; i++) tiltW.push(Object.assign(CALT.writing(CALT.person(rt), SY.mulberry32(9000 + i), 9000 + i), { rotDeg: 0 }));
+  const f12Bad = [], f12Far = [];
+  let f12N = 0;
+  tiltW.forEach((w, i) => {
+    const a = HW.analyze(SY.synth(w), { side: w.side });
+    if (!a.ok) return;
+    [-25, 25].forEach((deg) => {
+      const b = HW.analyze(SY.synth(Object.assign({}, w, { rotDeg: deg })), { side: w.side });
+      if (!b.ok) return;
+      f12N++;
+      const d = Math.abs(b.feats.f12 - a.feats.f12);
+      if (!(d <= 3)) f12Bad.push(`#${i} ${deg}°: f12 ${a.feats.f12}→${b.feats.f12}`);
+      if (!(d <= 5)) f12Far.push(`#${i} ${deg}°: f12 ${a.feats.f12}→${b.feats.f12}`);
+    });
+  });
+  check(f12N >= 70 && !f12Far.length && f12Bad.length <= 0.05 * f12N,
+    `字全体を ±25° 傾けても、右上がり f12 の差はどの人も 5° 以内、3° 以内が ${f12N - f12Bad.length}/${f12N}（95% 以上）`, f12Far.concat(f12Bad).join(' / '));
+  // 回転の推定が MAX_ROT（30°）を超えるときは 30° に抑えて回し戻す（以前は 0 にしたので、-30° 前後で縦横比・すき間が急にずれた）
+  const clampRows = [];
+  [-32, -30, 30].forEach((deg) => {
+    const d7 = [], d2 = [];
+    tiltW.forEach((w) => {
+      const a = HW.analyze(SY.synth(w), { side: w.side }), b = HW.analyze(SY.synth(Object.assign({}, w, { rotDeg: deg })), { side: w.side });
+      if (a.ok && b.ok) { d7.push(b.feats.f7 - a.feats.f7); d2.push(b.feats.f2 - a.feats.f2); }
+    });
+    const m = (x) => x.reduce((p, q) => p + q, 0) / Math.max(1, x.length);
+    clampRows.push({ deg, n: d7.length, f7: m(d7), f2: m(d2) });
+  });
+  check(clampRows.every((r) => r.n >= 25 && Math.abs(r.f7) <= 0.06 && Math.abs(r.f2) <= 0.02),
+    `字全体を 30〜32° 傾けても、縦横比 f7・すき間 f2 の平均のずれは小さい（${clampRows.map((r) => `${r.deg}°: ${r.n} 人 f7 ${r.f7.toFixed(3)} f2 ${r.f2.toFixed(3)}`).join('／')}）`);
   const sd = SEEDS.map((seed) => [0.5, 4].map((h) => run({ seed, hJitterDeg: h }).feats.f3));
   check(sd.filter(([a, b]) => b > a).length >= 5, '横画の角度をばらつかせると f3（標準偏差）が大きくなる', J(sd));
   const hd = SEEDS.map((seed) => [-0.04, 0, 0.06].map((h) => run({ seed, head: h }).feats.f13));
@@ -564,39 +639,79 @@ head('■ 連綿（続け書き、f4）');
     if (!a11.ok || a11.feats.f4 !== 0 || J(a11.debug.assign) !== J(s11.truth)) bad.push(`seed ${seed} 口を4画: ${J(a11.debug.assign)} ${J(a11.problems)}`);
   });
   check(!bad.length, '口を一筆で書いても口が見つかり f4≥1、糸の2か所で f4=2、口を4画で書いても1つの画として扱う', bad.slice(0, 4).join('\n         '));
-  // 画の途中で指が離れて2〜3本に切れても（切れ目は 80ms）、切れた線は「画の一部」として同じ画に足され、
-  // 外接枠による特徴（大きさ f14・縦横比 f7・すき間 f2）・頭部突出 f13・口の開閉は、丸めの1目盛り以内で変わらない
+  // 画の途中で指を上げて、同じ所から書き足した（2〜3本に切れた）。0.08 秒（接触の途切れと同じ扱いで1本につなぐ）でも、
+  // 0.15 秒（「画の一部」として同じ画に足す）でも、外接枠による特徴（大きさ f14・縦横比 f7・すき間 f2）・頭部突出 f13・
+  // 口の開閉は、丸めの1目盛り以内で変わらない
   const cut = [];
   for (let seed = 1; seed <= 12; seed++) {
     const st = SY.synth({ seed }), a = HW.analyze(st, { side: 320 });
-    [[4, 2], [4, 3], [7, 2], [8, 2], [12, 2]].forEach(([k, parts]) => {
-      const b = HW.analyze(SY.split(st, k - 1, parts, 80), { side: 320 });
+    [[4, 2, 80], [4, 3, 80], [7, 2, 150], [8, 2, 80], [12, 2, 150], [4, 2, 150]].forEach(([k, parts, gapMs]) => {
+      const b = HW.analyze(SY.split(st, k - 1, parts, gapMs), { side: 320 });
       const d = ['f1', 'f9', 'f10'].filter((f) => state(a.feats, f) !== state(b.feats, f))
         .concat(['f2', 'f7', 'f13', 'f14'].filter((f) => !(Math.abs(a.feats[f] - b.feats[f]) <= 0.01 + 1e-9)));
-      if (!b.ok || d.length) cut.push(`seed ${seed} ${k}画目を${parts}本に: ${b.ok ? d.map((f) => `${f} ${J(a.feats[f])}→${J(b.feats[f])}`).join(', ') : J(b.problems)}`);
+      if (!b.ok || d.length) cut.push(`seed ${seed} ${k}画目を${parts}本に（${gapMs}ms）: ${b.ok ? d.map((f) => `${f} ${J(a.feats[f])}→${J(b.feats[f])}`).join(', ') : J(b.problems)}`);
     });
   }
-  check(!cut.length, '画が途中で2〜3本に切れても、大きさ・縦横比・すき間・頭部突出・口の開閉は変わらない（60 通り、丸めの1目盛り以内）', cut.slice(0, 4).join('\n         '));
-  // 時間の特徴も：切れ端は1画にまとめ、切れ目（タッチの取りこぼし 20〜60ms）は「画と画の間」に数えない
+  check(!cut.length, '画が途中で2〜3本に切れても（指を上げて 0.08・0.15 秒後に書き足す）、大きさ・縦横比・すき間・頭部突出・口の開閉は変わらない（72 通り、丸めの1目盛り以内）', cut.slice(0, 4).join('\n         '));
+  // 時間の特徴も：タッチの取りこぼし（指は動いたまま、接触だけが 20〜60ms 途切れる）で切れた線は1本につなぎ、
+  // 切れ目は「画と画の間」に数えない（画の数・間の割合 f8・速さ f6・止め f5 は変わらない）
   // 型が変わってよいのは、もともと境界の上（「○○型寄り」と出る人）で、その軸が入れ替わったときだけ
   const cutT = [];
   let cutN = 0, cutSame = 0;
   for (let seed = 1; seed <= 12; seed++) {
     const st = SY.synth({ seed }), a = HW.analyze(st, { side: 320 }), sa = HW.score(a, CAL);
     [1, 3, 6, 8, 11].forEach((k) => [20, 40, 60].forEach((gap) => {
-      const b = HW.analyze(SY.split(st, k, 2, gap), { side: 320 });
+      const b = HW.analyze(SY.split(st, k, 2, gap, 'dropout'), { side: 320 });
       cutN++;
       const sb = b.ok ? HW.score(b, CAL) : null;
       const fx = sb && (sa.x > CAL.center.x) !== (sb.x > CAL.center.x), fy = sb && (sa.y > CAL.center.y) !== (sb.y > CAL.center.y);
-      if (!b.ok || !(Math.abs(a.feats.f8 - b.feats.f8) <= 0.01 + 1e-9) || !(Math.abs(a.feats.f6 - b.feats.f6) <= 0.02 + 1e-9) ||
+      if (!b.ok || b.nStrokes !== a.nStrokes || !(Math.abs(a.feats.f8 - b.feats.f8) <= 0.01 + 1e-9) || !(Math.abs(a.feats.f6 - b.feats.f6) <= 0.02 + 1e-9) ||
           !(Math.abs(a.feats.f5 - b.feats.f5) <= 20) || (fx && !sa.lean.x) || (fy && !sa.lean.y)) {
         cutT.push(`seed ${seed} ${k + 1}画目 ${gap}ms: ${b.ok ? `f8 ${a.feats.f8}→${b.feats.f8} f6 ${a.feats.f6}→${b.feats.f6} f5 ${a.feats.f5}→${b.feats.f5} ${sa.key}→${sb.key}` : J(b.problems)}`);
       }
       if (sb && sb.key === sa.key) cutSame++;
     }));
   }
-  check(!cutT.length, `画が途中で 20〜60ms 離れて2本に切れても、間の割合 f8 は ±0.01、速さ f6 は ±0.02、止め f5 は ±20ms 以内（切れ端は1画にまとめる）。` +
+  check(!cutT.length, `画の途中で接触が 20〜60ms 途切れても、画の数は同じで、間の割合 f8 は ±0.01、速さ f6 は ±0.02、止め f5 は ±20ms 以内（1本につなぐ）。` +
     `型は ${cutSame}/${cutN} で同じ（変わるのは境界の上の人だけ）`, cutT.slice(0, 4).join('\n         '));
+  // 画の終わり際（動いていた時間の 80〜90%）・止めている最中（止めの 30%）・書き出し直後（5〜15%）の接触の途切れ（20〜40ms）。
+  // 切れ端がどんなに小さくても（DOT_LEN 未満でも）時間でつないで1本にするので、止め（とめの印）・画の本当の端（外接枠・口の角）は
+  // 途切れなかったときと同じに測る。以前は、小さな切れ端を捨てていたので、止めが途切れた位置で測られて「とめ」の印が消え
+  // （8 割前後）、縦横比 f7 や口の左上 f1 が変わっていた（型が 1〜2 割変わった）
+  const CALS1 = require('./hw-calibration.js');
+  const rd = SY.mulberry32(1616), dropP = [];
+  for (let i = 0; i < 40; i++) dropP.push(CALS1.person(rd));
+  const dropBase = dropP.map((p, i) => Object.assign(CALS1.writing(p, SY.mulberry32(16000 + i), 16000 + i), { renmen: [], split11: false, order: 'standard' }));
+  const dropCal = CALS1.fitCal(dropBase.map((w) => HW.analyze(SY.synth(w), { side: w.side })).filter((r) => r.ok).map((r) => r.feats));
+  const dropBad = [], dropSt = {};
+  let dropN = 0, dropSame = 0, dropMarks = 0, dropMarkN = 0;
+  dropBase.forEach((w) => {
+    const st = SY.synth(w), a = HW.analyze(st, { side: w.side, cal: dropCal });
+    if (!a.ok) return;
+    const sa = HW.score(a, dropCal);
+    [[3, 'end', 0.8], [3, 'end', 0.9], [3, 'stop', 0.3], [9, 'start', 0.05], [9, 'start', 0.15], [6, 'end', 0.85], [11, 'stop', 0.3]].forEach(([k, kind, fr]) => [20, 40].forEach((gap) => {
+      const P = st[k].points, tM = P[P.length - 2].t, tU = P[P.length - 1].t, t0 = P[0].t;
+      // 割合 fr を、線の時刻（書き始め=0、pointerup=1）に直す
+      const frac = kind === 'stop' ? (tM + (tU - tM) * fr - t0) / (tU - t0) : (tM - t0) * fr / (tU - t0);
+      if (kind === 'stop' && tU - tM < 3 * gap) return;
+      const d = SY.dropout(st, k, frac, gap);
+      if (!d) return;
+      const b = HW.analyze(d, { side: w.side, cal: dropCal });
+      dropN++;
+      dropSt[kind] = (dropSt[kind] || 0) + 1;
+      if (!b.ok || b.nStrokes !== a.nStrokes) { dropBad.push(`seed ${w.seed} ${k + 1}画目 ${kind} ${fr} ${gap}ms: ${b.ok ? b.nStrokes + ' 画' : J(b.problems)}`); return; }
+      const sb = HW.score(b, dropCal);
+      if (sb.key === sa.key) dropSame++;
+      a.marks.stops.forEach((m) => { const q = b.marks.stops.find((x) => x.n === m.n); dropMarkN++; if (q && q.stop === m.stop) dropMarks++; });
+      const dd = ['f1', 'f9', 'f10'].filter((f) => state(a.feats, f) !== state(b.feats, f))
+        .concat(['f2', 'f7', 'f14'].filter((f) => !(Math.abs(a.feats[f] - b.feats[f]) <= 0.01 + 1e-9)))
+        .concat(Math.abs(a.feats.f5 - b.feats.f5) <= 20 ? [] : ['f5']);
+      if (dd.length) dropBad.push(`seed ${w.seed} ${k + 1}画目 ${kind} ${fr} ${gap}ms: ${dd.map((f) => `${f} ${J(a.feats[f])}→${J(b.feats[f])}`).join(', ')}`);
+    }));
+  });
+  check(dropN >= 300 && dropBad.length <= dropN * 0.01 && dropSame >= 0.98 * dropN && dropMarks >= 0.97 * dropMarkN,
+    `画の終わり際・止めの最中・書き出し直後の接触の途切れ ${dropN} 通り（${J(dropSt)}）で、画の数は同じ、口の開閉・すき間・縦横比・大きさ・止め（±20ms）が` +
+    `変わったのは ${dropBad.length} 通り（1% 以下）、型は ${dropSame}/${dropN} で同じ、とめの印は ${dropMarks}/${dropMarkN} で同じ`, dropBad.slice(0, 4).join('\n         '));
   // 書き終えてから画の終わりに落ちた小さなタップ（一辺の 1.2〜1.8%）は、画の続きとして数えない（なぞり書きと同じ扱い）
   const tapEnd = [], lastT = (st) => st[st.length - 1].points.slice(-1)[0].t;
   for (let seed = 1; seed <= 6; seed++) {
@@ -628,7 +743,8 @@ head('■ 収筆の止め（f5）');
   check(cnt(mixed) === 3 && mixed.feats.f5 >= 150, `5画のうち3画で止めれば、f5 は「止めた」側になる（f5=${mixed.feats.f5}、とめ ${cnt(mixed)}画）`);
 
   // 止めの長さは、書く速さに引っぱられない（以前は、ゆっくり書くだけで止め 0ms の人が 5画とも「とめ」・「止めが長め」になった）。
-  // 画面側は analyze() に cal を渡さないので、しきい値は同梱の較正の中央値（STOP_MS）。採点も同じ中央値の較正で。
+  // ここでは analyze() に cal を渡さない呼び方（しきい値は STOP_MS）で、採点も f5 の中央値を STOP_MS にした較正で確かめる。
+  // （画面側 yui/hw.js は analyze() に較正を渡すので、しきい値は較正の f5 の中央値。どちらでも印と採点の基準は同じ値）
   const CAL_SHIP = JSON.parse(J(CAL));
   CAL_SHIP.features.f5.median = HW.STOP_MS;
   const slowBad = [];
@@ -719,7 +835,9 @@ head('■ 結果に使わない約束：ふるえ・途中の長い間');
   const CALS = require('./hw-calibration.js');
   // 同じ人たちを、ふるえなし／ふるえ 2px・8Hz で2回ずつ書かせ、型の割合がどれだけ動くかを見る。
   // 較正はふるえなしの人たちから作る（本番と同じ作り方）。
-  const rp = SY.mulberry32(31337), N = 300;
+  // 人数は 600 人。300 人では、型の割合の差そのものの抽出のぶれが ±1.5 ポイントほどあり（種を変えると 3.0〜5.7）、
+  // 5 ポイントの関門が偶然で通ったり落ちたりしていたためです（関門の値は変えていません）。
+  const rp = SY.mulberry32(31337), N = 600;
   const people = [];
   for (let i = 0; i < N; i++) people.push(CALS.person(rp));
   const base = people.map((p, i) => CALS.measure(p, 4000 + i));
@@ -766,6 +884,50 @@ head('■ 結果に使わない約束：ふるえ・途中の長い間');
   const longPause = HW.analyze(SY.synth({ seed: 1 }).map((x, i) => (i < 6 ? x : { points: x.points.map((p) => ({ x: p.x, y: p.y, t: p.t + 60000 })) })), { side: 320 });
   check(longPause.ok && longPause.totalMs < HW.analyze(SY.synth({ seed: 1 }), { side: 320 }).totalMs + 1600,
     `1 分止まっても、書いた時間（totalMs）は間を 1.5 秒で打ち切って数える（${longPause.totalMs}ms）`);
+
+  // 速さ f6 は「指が動いていた時間」で割る：止め（とめ）の長さは f5 だけに入り、f6 には入らない（以前は止め 200ms で f6 が 2 割下がり、
+  // 止めが f5 と f6 の両方から y 軸に入っていた）。動く速さが同じなら、止め 0ms と 200ms・400ms で f6 はまったく同じ
+  // （止めている間に位置の同じ pointermove が来る端末でも ±0.01）
+  const stopBad = [];
+  for (let i = 0; i < 30; i++) {
+    const w = CALS.writing(people[i], SY.mulberry32(24000 + i), 24000 + i);
+    [false, true].forEach((holdEvents) => {
+      const f6 = [0, 200, 400].map((stopMs) => HW.analyze(SY.synth(Object.assign({}, w, { stopMs, holdEvents })), { side: w.side }).feats.f6);
+      if (f6.some((v) => v === null) || (holdEvents ? f6.some((v) => Math.abs(v - f6[0]) > 0.01 + 1e-9) : f6.some((v) => v !== f6[0]))) stopBad.push(`#${i}${holdEvents ? ' 止めの間も pointermove' : ''}: ${J(f6)}`);
+    });
+  }
+  check(!stopBad.length, '動く速さが同じなら、止め 0・200・400ms で速さ f6 は同じ（30 人。止めの間の pointermove ありでも ±0.01）', stopBad.slice(0, 4).join(' / '));
+
+  // 指を画面に置いたまま考えた 1〜3 秒（動き出す前・画の途中・離す前）では、型はほとんど変わらない（98% 以上で同じ）。
+  // 以前は、指を置いたままの時間が速さ f6 の分母と 1画の長さ（f8）に入り、3 秒で 3 割近くの人の型が変わっていた。
+  // 離す前の間は、とめの画（4・7・8・9・12）では「長い止め」そのものなので f5 が変わりうる。ここではとめでない画で確かめ、
+  // とめの画でも f6 と f8 は変わらないことを確かめる
+  const TOME_N = [4, 7, 8, 9, 12];
+  const pauseRows = {}, pauseBad = [];
+  const pc = cal;
+  for (let i = 0; i < 150; i++) {
+    const w = CALS.writing(people[i], SY.mulberry32(22000 + i), 22000 + i), m = SY.make(w), st = m.strokes, a = HW.analyze(st, { side: w.side });
+    if (!a.ok) continue;
+    const ka = HW.score(a.feats, pc).key;
+    const k = i % st.length, isTome = m.truth[k].some((t) => TOME_N.indexOf(t) >= 0) && TOME_N.indexOf(m.truth[k][m.truth[k].length - 1]) >= 0;
+    [[0, '動き出す前'], [0.5, '画の途中'], [1, '離す前']].forEach(([fr, nm]) => [1000, 3000].forEach((ms) => {
+      const b = HW.analyze(SY.pause(st, k, fr, ms, i % 2 === 0, w.hz), { side: w.side });
+      if (!b.ok) { pauseBad.push(`#${i} ${nm} ${ms}ms: ${J(b.problems)}`); return; }
+      if (fr === 1 && isTome) {
+        if (Math.abs(b.feats.f6 - a.feats.f6) > 0.01 + 1e-9 || Math.abs(b.feats.f8 - a.feats.f8) > 0.01 + 1e-9) pauseBad.push(`#${i} とめの画の${nm} ${ms}ms: f6 ${a.feats.f6}→${b.feats.f6} f8 ${a.feats.f8}→${b.feats.f8}`);
+        return;
+      }
+      const key = `${nm} ${ms / 1000}秒`, r = pauseRows[key] = pauseRows[key] || { n: 0, same: 0, f6: [] };
+      r.n++; if (HW.score(b.feats, pc).key === ka) r.same++;
+      r.f6.push(b.feats.f6 / a.feats.f6);
+    }));
+  }
+  const pauseTxt = Object.keys(pauseRows).map((k) => {
+    const r = pauseRows[k], f = r.f6.slice().sort((x, y) => x - y);
+    return `${k} 同じ型 ${(100 * r.same / r.n).toFixed(1)}%（f6 の比の中央値 ${f[f.length >> 1].toFixed(3)}）`;
+  });
+  const pauseFail = Object.keys(pauseRows).filter((k) => { const r = pauseRows[k], f = r.f6.slice().sort((x, y) => x - y); return r.same < 0.98 * r.n || Math.abs(f[f.length >> 1] - 1) > 0.01; });
+  check(!pauseFail.length && !pauseBad.length, `指を置いたまま 1〜3 秒止まっても型は 98% 以上で同じ（${pauseTxt.join('／')}）`, pauseFail.concat(pauseBad).slice(0, 4).join(' / '));
 }
 
 /* ============================================================ 2回の平均 */
@@ -910,7 +1072,8 @@ head('■ シェア用の文字列（encodeShare / decodeShare）');
   const keys = Object.keys(one).sort().join(',');
   check(keys === 'disp,highlight,items,key,lean,v' && Object.keys(one.disp).sort().join(',') === 'f1,f2,f5',
     '入るのは 版・型・境界・特徴の種類と向き・表示用の値3つ だけ（線は入らない。items は disp と同じ値の一覧）', keys);
-  // items：画面側（yui/hw.js の sharedMeasureRows）が読む表示用の値。disp と同じ値で、「いちばん特徴」（f2・f5）を先頭に
+  // items：disp と同じ値を {feature, state|value} の一覧にしたもの（「いちばん特徴」（f2・f5）を先頭に）。
+  // いまの画面側（yui/hw.js の rowLink）は disp を読み、items は読みません。形式を変えないよう、同じ内容を保っています
   const itemBad = [];
   ['1u2sdmo405', '1s0n2pc455', '1s0n5pa15n', '1k0n5mo452', '1c0nnnnnnn', '1s0n3pnnn2'].forEach((code) => {
     const d = HW.decodeShare(code);
@@ -943,7 +1106,7 @@ head('■ シェア用の文字列（encodeShare / decodeShare）');
     // score() が出さない組み合わせ：口の角が「閉」の向き（9m・am）、向きが 0（z）
     '1s0n9mnnnn', '1s0namnnnn', '1s0n9moa5n'.slice(0, 10), '1s0n2znnnn', '1s0n9znnnn', '1s0nazcnn3',
     // encodeShare が出さない組み合わせ：すき間が「いちばん特徴」なのに値が無い、とめの数が向きと食い違う、すき間が -15% 未満
-    // （とめが「いちばん特徴」で数が「なし」は出る：画面側が marks を渡さないとき・数が向きと食い違うとき）
+    // （とめが「いちばん特徴」で数が「なし」は出る：marks を渡さない呼び方のとき・2回書きで数が平均の向きと食い違うとき）
     '1s0n2pcnn5', '1s0n2mcnnn', '1s0n5pc450', '1s0n5pc452', '1s0n5mc453', '1s0n5mc455', '1s0n5pc451', '1s0n5mc454',
     '1s0nnnc005', '1s0nnnc145', '1s0n2pc005', '1s0n3pc005'
   ];
@@ -997,31 +1160,36 @@ head('■ シェア用の文字列（encodeShare / decodeShare）');
     if (!code || !HW.decodeShare(code)) realBad.push(`#${i} ${code}`);
   }
   check(!realBad.length, '本物の字から作った文字列は、decodeShare で読める', realBad.join(' '));
-  // yui/hw.js の呼び方のまま：analyze に cal を渡さない（しきい値は STOP_MS）・encodeShare に marks を渡す／渡さない・decodeShare に cal を渡さない。
-  // 自分の画面の「いちばん特徴」が、リンク・再読み込みの画面でも同じになり、f5 の向きはとめの印（過半数）と食い違わない
-  const CAL_SHIP = JSON.parse(J(CAL));
-  CAL_SHIP.features.f5.median = HW.STOP_MS;
+  // yui/hw.js の呼び方のまま：線をキャンバス一辺=1 から 1000 倍して analyze(scaled, { side: 1000, cal: CAL })（hw.js の analyzeCurrent）、
+  // 2回書いたら average(1回目.feats, 2回目.feats)、score(feats, CAL)、encodeShare(scored, feats, drawnMarks())（drawnMarks は
+  // 最後に書いた回の marks）、decodeShare(code)（較正は渡さない）。1回書きと2回書きの両方で、自分の画面の「いちばん特徴」が
+  // リンク・再読み込みの画面でも同じになり、リンクに入るとめの数は f5 の向きと食い違わない（食い違うときは数を「なし」にする）。
+  // 1回書きでは、f5 が「いちばん特徴」なら、画面のとめの印（過半数）とも必ずそろう
   const flowBad = [], rf = SY.mulberry32(1212);
-  let flowN = 0, flowF5 = 0;
+  let flowN = 0, flowF5 = 0, flowTwo = 0;
+  const toApp = (st, side) => st.map((x) => ({ points: x.points.map((q) => ({ x: q.x / side * 1000, y: q.y / side * 1000, t: q.t })) }));
+  const analyzeCurrent = (st, side) => HW.analyze(toApp(st, side), { side: 1000, cal: CAL });
   for (let i = 0; i < 150; i++) {
-    const p = CALS.writing(CALS.person(rf), SY.mulberry32(6000 + i), 12000 + i), st = SY.synth(p);
-    const scaled = st.map((x) => ({ points: x.points.map((q) => ({ x: q.x / p.side * 1000, y: q.y / p.side * 1000, t: q.t })) }));
-    const a = HW.analyze(scaled, { side: 1000 });
-    if (!a.ok) continue;
+    const person = CALS.person(rf);
+    const p1 = CALS.writing(person, SY.mulberry32(6000 + i), 12000 + i), p2 = CALS.writing(person, SY.mulberry32(8000 + i), 14000 + i);
+    const a1 = analyzeCurrent(SY.synth(p1), p1.side), a2 = i % 2 ? analyzeCurrent(SY.synth(p2), p2.side) : null;
+    if (!a1.ok || (a2 && !a2.ok)) continue;
     flowN++;
-    const sc = HW.score(a.feats, CAL_SHIP);
-    [HW.encodeShare(sc, a.feats), HW.encodeShare(sc, a.feats, a.marks)].forEach((code, k) => {
-      const d = HW.decodeShare(code);
-      if (!d || J(d.highlight) !== J(sc.highlight) || !Array.isArray(d.items)) flowBad.push(`#${i}${k ? ' 印あり' : ''}: ${code} ${J(sc.highlight)} → ${d && J(d.highlight)}`);
-    });
+    if (a2) flowTwo++;
+    const feats = a2 ? HW.average(a1.feats, a2.feats) : a1.feats, drawn = (a2 || a1).marks;
+    const sc = HW.score(feats, CAL), code = HW.encodeShare(sc, feats, drawn), d = HW.decodeShare(code);
+    if (!d || J(d.highlight) !== J(sc.highlight)) { flowBad.push(`#${i}${a2 ? ' 2回' : ''}: ${code} ${J(sc.highlight)} → ${d && J(d.highlight)}`); continue; }
     const h = sc.highlight;
     if (h && h.feature === 'f5') {
       flowF5++;
-      const c = a.marks.stops.filter((q) => q.stop).length, n = a.marks.stops.length;
-      if (h.sign > 0 ? !(2 * c > n) : !(2 * c <= n)) flowBad.push(`#${i}: f5=${a.feats.f5} 向き ${h.sign} とめ ${c}/${n}`);
+      const c = drawn.stops.filter((q) => q.stop).length, n = drawn.stops.length;
+      const agreeMarks = h.sign > 0 ? 2 * c > n : 2 * c <= n;
+      if (!a2 && !agreeMarks) flowBad.push(`#${i}: f5=${feats.f5} 向き ${h.sign} とめ ${c}/${n}`);
+      if (d.disp.f5 !== null && (h.sign > 0 ? d.disp.f5 < 3 : d.disp.f5 > 2)) flowBad.push(`#${i}${a2 ? ' 2回' : ''}: リンクのとめの数 ${d.disp.f5} が向き ${h.sign} と食い違う`);
     }
   }
-  check(flowN >= 140 && !flowBad.length, `画面側と同じ呼び方（cal なしの analyze・marks あり／なしの encodeShare）で、${flowN} 人とも「いちばん特徴」がリンクでも同じ（f5 は ${flowF5} 人、とめの印とも食い違わない）`, flowBad.slice(0, 3).join(' / '));
+  check(flowN >= 140 && !flowBad.length, `画面側（yui/hw.js）と同じ呼び方（cal ありの analyze・drawnMarks() を渡す encodeShare・1回書き／2回書き ${flowTwo} 人）で、` +
+    `${flowN} 人とも「いちばん特徴」がリンクでも同じ（f5 は ${flowF5} 人、とめの印・リンクのとめの数とも食い違わない）`, flowBad.slice(0, 3).join(' / '));
   const good = HW.decodeShare('1u2sdmo405');
   check(good && good.key === 'suishin' && good.lean.toward === 'sekkei' && good.highlight.feature === 'f13' &&
     good.highlight.element === 'dentatsu' && good.highlight.sign === -1 && good.disp.f1 === 'open' && good.disp.f2 === 10 && good.disp.f5 === 5,

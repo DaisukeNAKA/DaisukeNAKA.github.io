@@ -3,6 +3,7 @@
  *
  *   node _ops/test/hw-calibration.js            # N=3000
  *   node _ops/test/hw-calibration.js 500        # 人数を変える
+ *   node _ops/test/hw-calibration.js --content path/to/content.js   # 同梱の較正を別のファイルで確かめる（貼り替える前の確認用）
  *
  * 目的：yui/hw-engine.js の score() に渡す cal（各特徴の中央値と尺度、軸の中心）を、
  * 「実データが入るまでの仮の値」として作り、公開の関門を合成データで先に確かめること。
@@ -16,9 +17,16 @@
  *   (b) |Spearman ρ(x, y)| < 0.3
  *   ・いちばん特徴が出た測定値が、1つに 40% を超えて偏らない（全体・点の間隔 240Hz の端末・ふるえのある人のそれぞれで。
  *     端末とふるえは、2回平均と1回書き（画面では2回目は任意）の両方で）
- *   ・エンジンのとめのしきい値 HW.STOP_MS が、この較正の f5 の中央値と同じ（画面側は analyze() に cal を渡さないので、
- *     違うと、とめの印と「いちばん特徴」の f5 の向きが食い違う）
- *   関門が1つでも未達なら、終了コードは 1 です。
+ *   ・同梱の較正（yui/content.js の calibration。画面が実際に使う値）で、検証用の人たちを採点しても各タイプが 15〜35% で、
+ *     その f5 の中央値が、この実行で作った較正の f5 の中央値と同じ。
+ *     エンジンの測り方を変えたのに content.js の較正を貼り替え忘れると、画面では型の割合が偏ります
+ *     （f5・f6 の測り方を変えたあと古い較正のままだと、共鳴型が 10〜14%、直感型が 42% まで偏った）。
+ *     check.js はこれを見ないので、ここで止めます。
+ *     なお、とめの印としきい値と「いちばん特徴」の f5 の向きは、画面側（yui/hw.js）が analyze() に同じ較正を渡すので、
+ *     較正が古くても食い違いません（食い違わないことは単体テストで確かめています）。問題は型の割合のほうです。
+ *   ・エンジンのとめのしきい値の既定値 HW.STOP_MS（analyze() に較正を渡さなかったときだけ使う）が、この較正の f5 の中央値と同じ
+ *   関門が1つでも未達なら、終了コードは 1 です。content.js の較正が古いだけなら、出力の末尾の CALIBRATION を
+ *   yui/content.js の calibration に貼り替えてから、もう一度実行してください。
  *   (a)(b) と偏りは、中央値・軸の中心を決めた人たちとは別の人たち（検証用の別の種）で確かめます。
  *   同じ人たちで確かめると、中心を中央値に置いた時点で (a) がほぼ自動的に満たされるためです。
  *   (e) の代わり：ふるえのある人（2px・8Hz）だけを取り出しても、型の割合が 15 ポイント以上ずれないか
@@ -269,8 +277,37 @@ function hlShares(list) {
 }
 const hlKey = (s) => (s.highlight ? s.highlight.feature + (s.highlight.sign > 0 ? '+' : '-') : 'none');
 
+/* 同梱の較正：yui/content.js（または --content で指定したファイル）を、window だけを持つ入れ物の中で読み、calibration を取り出す */
+function contentPath() {
+  const i = process.argv.indexOf('--content');
+  return i >= 0 && process.argv[i + 1] ? require('path').resolve(process.argv[i + 1]) : require('path').join(__dirname, '..', '..', 'yui', 'content.js');
+}
+function loadShipped(file) {
+  try {
+    const box = { window: {} };
+    require('vm').runInNewContext(require('fs').readFileSync(file, 'utf8'), box, { filename: file });
+    const cal = box.window.YUI_CONTENT && box.window.YUI_CONTENT.calibration;
+    return { path: require('path').relative(process.cwd(), file) || file, cal: cal || null, err: cal ? null : 'calibration がありません' };
+  } catch (e) {
+    return { path: file, cal: null, err: e.message };
+  }
+}
+/* 2つの較正の違い（中央値・尺度・中心・軸の尺度）を短い文にする */
+function calDiff(a, b) {
+  const out = [];
+  KEYS.forEach((k) => {
+    const x = a.features && a.features[k], y = b.features[k];
+    if (!x || x.median !== y.median || x.scale !== y.scale) out.push(`${k} ${x ? x.median + '/' + x.scale : 'なし'}→${y.median}/${y.scale}`);
+  });
+  ['x', 'y'].forEach((ax) => {
+    if (!a.center || a.center[ax] !== b.center[ax]) out.push(`center.${ax} ${a.center ? a.center[ax] : 'なし'}→${b.center[ax]}`);
+    if (!a.axisScale || a.axisScale[ax] !== b.axisScale[ax]) out.push(`axisScale.${ax} ${a.axisScale ? a.axisScale[ax] : 'なし'}→${b.axisScale[ax]}`);
+  });
+  return out;
+}
+
 function main() {
-  const N = +process.argv[2] || 3000;
+  const N = (+process.argv[2] > 0 ? +process.argv[2] : 0) || 3000;
   const NH = Math.max(300, Math.round(N / 3));        // 検証用（中心を決めた人とは別の人たち）
   const M = Math.min(400, N);                          // 端末差・別の日・ふるえの比較に使う人数
   const t0 = Date.now();
@@ -301,9 +338,9 @@ function main() {
     console.log(`  ${k.padEnd(4)} n=${String(v.length).padStart(4)}  中央値 ${String(features[k].median).padStart(7)}  尺度 ${String(features[k].scale).padStart(7)}${extra}`);
   });
   const scFit = valid.map((m) => HW.score(m.feats, cal));
-  /* とめの印のしきい値：画面側は analyze() に cal を渡さないので、エンジンの STOP_MS が画面のしきい値になる。
-   * これが較正の f5 の中央値と違うと、とめの印と「いちばん特徴」の f5 の向きが食い違う */
-  console.log(`\n■ 関門：エンジンのとめのしきい値（HW.STOP_MS）と、この較正の f5 の中央値`);
+  /* とめの印のしきい値の既定値：画面側（yui/hw.js）は analyze() に較正を渡すので、画面のしきい値は較正の f5 の中央値。
+   * STOP_MS は較正を渡さない呼び方（単体テスト・ほかの道具）のための既定値で、同梱の較正と同じ値にそろえておく */
+  console.log(`\n■ 関門：エンジンのとめのしきい値の既定値（HW.STOP_MS）と、この較正の f5 の中央値`);
   let gatesPre = 0;
   if (HW.STOP_MS === features.f5.median) console.log(`  ok   STOP_MS ${HW.STOP_MS}ms = 中央値 ${features.f5.median}ms`);
   else { console.log(`  未達 STOP_MS ${HW.STOP_MS}ms ≠ 中央値 ${features.f5.median}ms（yui/hw-engine.js の STOP_MS を ${features.f5.median} に）`); gatesPre++; }
@@ -334,6 +371,21 @@ function main() {
   const hl1 = hlShares(sc1);
   console.log(`  参考：1回書きだけで採点したとき（${sc1.length} 人）: ${shareTxt(shares(sc1))}、` +
     `ρ=${spearman(sc1.map((s) => s.x), sc1.map((s) => s.y)).toFixed(3)}、いちばん特徴 最大 ${pct(hl1.max)}（${hl1.txt}）`);
+
+  /* ---- 同梱の較正（yui/content.js）で採点したとき ---- */
+  const shipped = loadShipped(contentPath());
+  console.log(`\n■ 関門：同梱の較正（${shipped.path}）で、検証用の同じ ${hv.length} 人を採点したとき（画面が実際に使う値）`);
+  if (!shipped.cal) {
+    gate(false, `content.js の calibration を読めません（${shipped.err}）`);
+  } else {
+    const scS = hv.map((m) => HW.score(m.feats, shipped.cal)).filter(Boolean), shS = shares(scS);
+    TYPES.forEach((t) => gate(shS[t] >= 0.15 && shS[t] <= 0.35, `同梱の較正で ${t.padEnd(8)} ${pct(shS[t])}（15〜35%）`));
+    const f5s = shipped.cal.features && shipped.cal.features.f5 ? shipped.cal.features.f5.median : null;
+    gate(f5s === features.f5.median, `同梱の較正の f5 の中央値 ${f5s}ms ＝ この実行の f5 の中央値 ${features.f5.median}ms`);
+    const diff = calDiff(shipped.cal, cal);
+    console.log('  参考：同梱の較正とこの実行の較正の違い ' + (diff.length ? diff.join(' / ') : 'なし（同じ）'));
+    if (diff.length) console.log('  → 末尾の CALIBRATION を yui/content.js の calibration に貼り替えてください（型の割合・中央値の表示が、この実行の測り方にそろいます）');
+  }
 
   console.log('\n■ 境界付近（「○○型寄り」と出る人、検証用の人たち）');
   const leanShare = sc.filter((s) => s.lean.x || s.lean.y).length / sc.length;

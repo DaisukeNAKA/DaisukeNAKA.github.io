@@ -62,7 +62,7 @@ window.YUI_CONTENT = {
    * ------------------------------------------------------------------- */
   calibration: {
     "version": "synthetic-v1",
-    "n": 2991,
+    "n": 2989,
     "note": "合成データ（_ops/test/hw-calibration.js の person() の仮定）から作った仮の値。人の実測ではない。パイロットの実測で置き換えること。",
     "features": {
       "f1": {
@@ -71,7 +71,7 @@ window.YUI_CONTENT = {
       },
       "f2": {
         "median": 0.16,
-        "scale": 0.0371
+        "scale": 0.0297
       },
       "f3": {
         "median": 1.5,
@@ -82,20 +82,20 @@ window.YUI_CONTENT = {
         "scale": 0.7413
       },
       "f5": {
-        "median": 140,
-        "scale": 81.5419
+        "median": 100,
+        "scale": 66.7161
       },
       "f6": {
-        "median": 1,
-        "scale": 0.3076
+        "median": 1.73,
+        "scale": 0.5263
       },
       "f7": {
         "median": 0.06,
-        "scale": 0.1038
+        "scale": 0.0964
       },
       "f8": {
-        "median": 0.48,
-        "scale": 0.0667
+        "median": 0.73,
+        "scale": 0.0519
       },
       "f9": {
         "median": -1,
@@ -111,7 +111,7 @@ window.YUI_CONTENT = {
       },
       "f12": {
         "median": 4.5,
-        "scale": 3.3358
+        "scale": 2.9652
       },
       "f13": {
         "median": 0,
@@ -143,12 +143,12 @@ window.YUI_CONTENT = {
       "f8": -1
     },
     "center": {
-      "x": -0.2268,
-      "y": -0.0083
+      "x": -0.1995,
+      "y": -0.0073
     },
     "axisScale": {
-      "x": 0.3521,
-      "y": 0.3476
+      "x": 0.353,
+      "y": 0.3137
     },
     "boundary": 0.25
   },
