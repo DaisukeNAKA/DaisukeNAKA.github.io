@@ -111,7 +111,7 @@
    *   LP_SIGMA      形を測る線（σ=40ms。8Hz の揺れを約 1/8 に）
    *   LP_SIGMA_STOP 止めを測る線（σ=30ms。8Hz・2px のふるえを約 0.3 に）。以前は 60ms でしたが、窓が広いほど、
    *                 速く書いて止めた画で「着いた時刻」が遅れて見え、止めが書く速さで短く出ていました
-   *                 （合成で、止め 120ms の人が速さ 3 字高/秒で 70ms、40ms の窓でも 70〜80ms）。止めは下の STOP_Q1・STOP_Q2 の
+   *                 （合成で止め 120ms の人が、速さ 3 字高/秒では、窓 60ms で 20ms 前後、40ms で 70ms、30ms で 90ms）。止めは下の STOP_Q1・STOP_Q2 の
    *                 距離（字の大きさの 12%・6%。320px の枠の字なら 20px・10px）で測るので、低域通過のあとに 1〜2px の
    *                 ふるえが残っても測れます（8Hz・2px のふるえで、止めの差は ±20ms 以内。単体テスト）。 */
   var LP_SIGMA = 40;
@@ -1169,7 +1169,7 @@
    * 最初の位置合わせを回して試したときは、bad の少ないもの → strict の多いもの → resid の小さいもの を選びます。
    * strict だけで比べると、口を4画で書いた人の字で、横折の2本を捨てて「底の横画が横折も兼ねる」ような
    * 取り違えのほうが、対応づいた画の数が多く見えてしまうためです。 */
-  function quality(res, S) {
+  function quality(res, S, off) {
     var nStrict = 0, rsum = 0, e, i, ok = {}, IK = inkIds(res), all = 0, out = 0;
     for (e = 0; e < res.A.length; e++) {
       if (res.A[e].c < MAXC) { nStrict += res.A[e].b - res.A[e].a + 1; }
@@ -1177,6 +1177,7 @@
     }
     for (i = 0; i < IK.length; i++) { ok[IK[i]] = true; }
     for (i = 0; i < S.length; i++) {
+      if (i === off) { continue; }   // 対応づけから外した線は、無かったものとして比べる（押しのけの確かめの当て直し）
       var li = plen(S[i].shape);
       all += li;
       if (!ok[i]) { out += li; }
@@ -1246,19 +1247,19 @@
    * quality の注記）を使います。
    * 外接枠を作り直したあとも、いつも回転なしから試します。前の回の回転から始めると、同じ字でも
    * 迷い線があったかどうかで別の当てはめに落ち着き、測定値が変わることがあるためです。 */
-  function align(S, B, cs, off) {
+  function align(S, B, cs, off, rotList) {
     shapeStrokes(S, B, cs);
-    var rots = [0].concat(ROT_TRY), best = null, r, k;
+    var rots = rotList || [0].concat(ROT_TRY), best = null, r, k;
     for (r = 0; r < rots.length; r++) {
       var M = initM(B, cs, rots[r]), Ms = [];
       for (k = 0; k < 12; k++) { Ms.push(M); }
       var res = assignOnce(S, Ms, off);
-      res.Ms = Ms;
+      res.Ms = Ms; res.rot = rots[r];
       for (var it = 0; it < 2; it++) {
         var M2 = refit(S, res, Ms, it === 1);
-        if (M2) { Ms = M2; res = assignOnce(S, Ms, off); res.Ms = Ms; }
+        if (M2) { Ms = M2; res = assignOnce(S, Ms, off); res.Ms = Ms; res.rot = rots[r]; }
       }
-      var q = quality(res, S);
+      var q = quality(res, S, off);
       if (!best || better(q, best.q)) { best = { res: res, q: q }; }
       if (best.q.bad === 0 && best.q.strict >= GOOD_STRICT && best.q.resid <= GOOD_RESID) { break; }
     }
@@ -1274,26 +1275,31 @@
    * (3) 字のすぐ外の長い迷い線が本物の画を押しのけていないかを確かめます（displaced）。
    * 画の一部を外接枠から外さないのは、途中で指が離れて2〜3本に切れた画でも、切れなかったときと同じ
    * 縦横比・大きさ・すき間になるようにするためです（外すと、縦画4を2本に切っただけで f7 が 8 割の人で変わった）。 */
-  function solve(S, use, off) {
+  function solve(S, use, off, rotList) {
     var u = [], i;
     for (i = 0; i < use.length; i++) { if (use[i] !== off) { u.push(use[i]); } }
     var B = bboxOf(S, u), cs = Math.max(B.w, B.h);
     var Bm = bboxOf(S, mainStrokes(S, u));
     if (Math.max(Bm.w, Bm.h) > 0) { B = Bm; cs = Math.max(B.w, B.h); }
-    var res = align(S, B, cs, off), A = usedIds(res);
+    var res = align(S, B, cs, off, rotList), A = usedIds(res);
     for (var round = 0; round < 2 && A.length; round++) {
       var B2 = bboxOf(S, A);
       if (sameBox(B2, B) || !(Math.max(B2.w, B2.h) > 0)) { break; }
       B = B2; cs = Math.max(B.w, B.h);
-      res = align(S, B, cs, off); A = usedIds(res);
+      res = align(S, B, cs, off, rotList); A = usedIds(res);
     }
     return { res: res, B: B, cs: cs, off: off };
   }
-  /* お手本の画そのもの（組の先頭の線）でない線の数：画の一部・なぞり書き・どの画にも対応しない線（広がりが TAP_LEN 以上、off は除く） */
-  function nonPrimary(res, S, off) {
-    var prim = {}, c = 0, e, i;
+  /* お手本の画そのもの（組の先頭の線）でないのに、お手本のどれかの画のそば（平均 MAXC 未満）にある線の数：
+   * 画の一部・なぞり書き・押し出された本物の画（広がりが TAP_LEN 以上）。どの画からも遠い迷い線は数えません
+   * （押しのけの手がかりにならず、確かめの当て直しが無駄に重くなるだけなので）。 */
+  function nonPrimary(res, S) {
+    var prim = {}, c = 0, e, i, k;
     for (e = 0; e < res.A.length; e++) { prim[res.A[e].i] = true; }
-    for (i = 0; i < S.length; i++) { if (i !== off && !prim[i] && S[i].ext >= TAP_LEN) { c++; } }
+    for (i = 0; i < S.length; i++) {
+      if (prim[i] || S[i].ext < TAP_LEN) { continue; }
+      for (k = 0; k < 12; k++) { if (directed(S[i].co, res.TV[k]) < MAXC) { c++; break; } }
+    }
     return c;
   }
   /* 押しのけの確かめ。字のすぐ外（LINK_D 以内）の長い迷い線（SHORT_D 以上）は最初の外接枠に残るので、お手本が
@@ -1301,7 +1307,7 @@
    * 押し出された画も字のインクとして数えるので extraInk にならず、対応づけの違う測定値が黙って出ていました
    * （糸の左や士の上に 20〜25% の迷い線で、型が変わる例があった）。
    * 続け書きの組（糸の 1-2 など）から画を1つ取られるだけのこともあり、そのときは押し出される線が無く、当てはまりだけが悪くなります。
-   * そこで、お手本の画そのものでない線（nonPrimary）があるとき、または当てはまり（照合距離の平均）が DISP_RESID を
+   * そこで、お手本の画のそばにあるのにお手本の画そのものでない線（nonPrimary）があるとき、または当てはまり（照合距離の平均）が DISP_RESID を
    * 超えるとき（合成のきれいな字では 99% 点が 0.022）だけ、対応づいた画の外接枠の端を作っている線を
    * 1本ずつ外して当て直し（solve の off）、次のすべてを満たせば、その線を「字と関係のない線」として外した当て直しを使います。
    *  (1) はっきり対応づいたお手本の画の数が減らない  (2) 当てはまり（照合距離の平均）が良くなる
@@ -1311,7 +1317,7 @@
    * （どちらでも、測定値が迷い線で黙って変わることはありません）。候補が複数あれば、当てはまりのいちばん良いものを選びます。 */
   function displaced(S, use, fit) {
     var res = fit.res, q0 = quality(res, S);
-    if (!res.A.length || (!nonPrimary(res, S, -1) && !(q0.resid > DISP_RESID))) { return fit; }
+    if (!res.A.length || (!nonPrimary(res, S) && !(q0.resid > DISP_RESID))) { return fit; }
     /* どのみち「結」として当てはまらない入力（noMatch で弾く）は確かめない（弾くことは変わらず、重い当て直しを避ける） */
     if (use.length < 4 || q0.strict < MIN_STRICT || !(q0.resid <= MAX_RESID)) { return fit; }
     /* 候補：外接枠の端を1本だけで作っている線（その線を除くと枠が縮む）と、照合距離がいちばん大きいお手本の画そのもの。
@@ -1331,9 +1337,11 @@
       if (res.A[i].c > wc && S[res.A[i].i].ext >= TAP_LEN) { wc = res.A[i].c; worst = res.A[i].i; }
     }
     if (worst >= 0 && cand.indexOf(worst) < 0) { cand.push(worst); }
-    var best = null, bestQ = null;
+    /* 候補ごとの当て直しは、回さない位置合わせと、元の当てはめで選ばれた回転だけで試す（速さのため）。
+     * 選んだ候補は、最後に全部の回転を試す当て直しでやり直すので、その線が無かったときと同じ結果になります。 */
+    var best = null, bestQ = null, quick = res.rot ? [0, res.rot] : [0];
     for (i = 0; i < cand.length; i++) {
-      var alt = solve(S, use, cand[i]), qa = quality(alt.res, S);
+      var alt = solve(S, use, cand[i], quick), qa = quality(alt.res, S);
       if (!(qa.strict >= q0.strict && qa.resid < q0.resid)) { continue; }
       /* (3)：外した線の照合用の線（S[..].co）は、いま当て直した外接枠で作られている */
       var far = Infinity, TV = alt.res.TV;
@@ -1342,10 +1350,10 @@
       if (!best || qa.resid < bestQ.resid) { best = alt; bestQ = qa; }
     }
     if (!cand.length) { return fit; }
-    var out = best || fit;
-    /* 候補の当て直しで、画ごとの照合用の線が別の外接枠で作り直されているので、選んだ外接枠で作り直す */
-    shapeStrokes(S, out.B, out.cs);
-    return out;
+    if (best) { return solve(S, use, best.off); }
+    /* 候補の当て直しで、画ごとの照合用の線が別の外接枠で作り直されているので、元の外接枠で作り直す */
+    shapeStrokes(S, fit.B, fit.cs);
+    return fit;
   }
 
   /* 最初の外接枠に入れる画：長さがキャンバス一辺の 2% 以上で、字のほかの線から離れたかたまり（迷い線）でないもの。

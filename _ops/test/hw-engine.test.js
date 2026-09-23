@@ -316,20 +316,24 @@ head('■ 妥当性チェック（診断に進ませない入力）');
   check(!bad20.length, '20° 傾けても、口の開閉は同じで、右上がり（字全体の回転は差し引く）は ±1.5° 以内', bad20.join(' / '));
   // 字全体を傾けても（スマホを斜めに持つ）、縦横比 f7・すき間 f2・大きさ f14・速さ f6 と型は変わらない。
   // 外接枠を字の回転の分だけ回し戻してから測るため（以前は 10° で 4 人に 1 人の型が変わった）
+  // 型が変わってよいのは、もともと境界の上（「○○型寄り」と出る人）で、その軸が入れ替わったときだけ
   const tiltBad = [];
   let tiltN = 0, tiltSame = 0;
   for (let seed = 1; seed <= 12; seed++) {
-    const a = run({ seed }), ka = HW.score(a, CAL).key;
+    const a = run({ seed }), sa = HW.score(a, CAL);
     [-20, -10, -5, 5, 10, 20].forEach((deg) => {
       const b = run({ seed, rotDeg: deg });
       tiltN++;
       if (!b.ok) { tiltBad.push(`seed ${seed} ${deg}°: ${J(b.problems)}`); return; }
       const d = ['f2', 'f7', 'f14'].filter((k) => !(Math.abs(a.feats[k] - b.feats[k]) <= 0.02 + 1e-9)).concat(Math.abs(a.feats.f6 - b.feats.f6) <= 0.03 + 1e-9 ? [] : ['f6']);
       if (d.length) tiltBad.push(`seed ${seed} ${deg}°: ${d.map((k) => `${k} ${a.feats[k]}→${b.feats[k]}`).join(', ')}`);
-      if (HW.score(b, CAL).key === ka) tiltSame++;
+      const sb = HW.score(b, CAL);
+      const fx = (sa.x > CAL.center.x) !== (sb.x > CAL.center.x), fy = (sa.y > CAL.center.y) !== (sb.y > CAL.center.y);
+      if ((fx && !sa.lean.x) || (fy && !sa.lean.y)) tiltBad.push(`seed ${seed} ${deg}°: ${sa.key}→${sb.key}（境界から遠いのに型が変わる）`);
+      if (sb.key === sa.key) tiltSame++;
     });
   }
-  check(!tiltBad.length && tiltSame >= 0.95 * tiltN, `字全体を ±5・10・20° 傾けても、f2・f7・f14 は ±0.02、f6 は ±0.03 以内で、型は ${tiltSame}/${tiltN} で同じ（95% 以上）`, tiltBad.slice(0, 4).join(' / '));
+  check(!tiltBad.length && tiltSame >= 0.9 * tiltN, `字全体を ±5・10・20° 傾けても、f2・f7・f14 は ±0.02、f6 は ±0.03 以内で、型は ${tiltSame}/${tiltN} で同じ（変わるのは境界の上の人だけ）`, tiltBad.slice(0, 4).join(' / '));
 }
 
 /* ============================================================ 字と関係のないインク */
