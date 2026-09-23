@@ -8,54 +8,70 @@
 
 ### `build/build-pages.js`
 
-`yui/content.js` から、タイプ別ページ（`yui/t/*.html`）と制作者ページ（`yui/about.html`）を生成します。
-文言を二重管理しないための仕組みです。`content.js` を編集したら実行してください。
+`yui/content.js` から、次のページを生成します。文言を二重管理しないための仕組みです。
+`content.js` を編集したら実行してください。
+
+| ページ | 中身 |
+|---|---|
+| `yui/index.html` | 手書きの診断（原案。スマホに指で「結」を書く） |
+| `yui/q.html` | 書かずに受ける10問版（指で書くのが難しい方のための代わりの経路） |
+| `yui/t/*.html` | タイプ別ページ（共有リンクの着地先） |
+| `yui/about.html` | この診断について（何を測り、どう当てはめているか・研究の状況・つくった人） |
 
 ```
 node _ops/build/build-pages.js
 ```
 
-### `build/render-ogp.js`
+### `build/make-cards.js` と `build/render-ogp.js`
 
-`build/cards.json` の定義から、OGP画像（`yui/ogp/*.png`）を 2400×1260 で書き出します。
+OGPカードの文言は `content.js` の `ogp`（タイプ名は `types.<型>.name`）が元です。
+`make-cards.js` が `build/cards.json` を作り、`render-ogp.js` が 2400×1260 のPNGを書き出します。
 ヘッドレスChromiumを使うため、playwright が必要です。
 
 ```
+node _ops/build/make-cards.js
 NODE_PATH=/opt/node22/lib/node_modules node _ops/build/render-ogp.js
 ```
 
 日本語フォントは IPAPGothic / IPAGothic のみを前提にしています。
 IPAフォントは実質1ウェイトで、56px未満で `font-weight:700` を指定すると漢字のふところが潰れます。
 小さい文字は必ず400のままにし、格は字間と余白で出してください。
-改行位置は `cards.json` の `\n` で手動制御しています（行頭に句読点が来ないように）。
+改行位置は `content.js` の `ogp.types.<型>.sub` の `\n` で指定します（トップは `make-cards.js` が文節で折ります）。
 
-**画像を差し替えるときは、ファイル名の `-v1` を上げてください。**
+**画像を差し替えるときは、`content.js` の `config.ogpVersion`（いまは `v3`）を上げてください。**
 SNSのOGPクローラは画像を強くキャッシュし、クエリ（`?v=2`）では再取得されないことがあります。
-ファイル名を変えたら、`yui/index.html` の `og:image` と `build-pages.js` の参照も更新します。
+ページの `og:image` は `ogpVersion` から組み立てるので、上げたら `build-pages.js` も実行します。
 
 ## 検証
 
 ### `test/check.js` — content.js を編集したら、まずこれ
 
 ```
-node _ops/test/check.js
+node _ops/test/check.js            # 約10秒
+node _ops/test/check.js --full     # エンジンの単体テスト（約2分）も通す
 ```
 
 ブラウザ不要。node だけで動きます。確認するのは次の点です。
 
-- `app.js` が参照しているキーが `content.js` に揃っているか
-- 設問の配点が有効な範囲か（x/y は -2〜2、3要素は 0〜3）
-- 4タイプすべてに**到達できる回答が存在するか**
-- 結スコアの段階が 0〜100 を隙間なく覆っているか
-- 処方箋が明快さ／接続／余白に1本ずつあるか
-- 生成ページとOGP画像が `content.js` に追いついているか
+- `content.js` の形（文言のキー・4タイプ・特徴・テーマ・テーマの向き）と、エンジンの妥当性チェックごとの書き直しの案内
+- `hw.js`・`quiz.js`・`common.js` が参照するキーが揃っているか、差し込み記号（`{type}` など）に埋める側があるか
+- 較正の形（重み・中央値・尺度・向き・中心）。合成データの仮の値のあいだは警告を出します
+- 合成の「結」でエンジンを通し、結果コードが往復するか（コードに線の記録が入る長さでないか）
+- 10問版の配点と、全 4^10 通りの型・テーマの内訳
+- 文言チェック（`test/wording/lint-wording.js`：禁止文言と必須文言）
+- 生成ページ・`cards.json`・OGP画像が `content.js` に追いついているか
+- 全ページの CSP・スクリプト・表示順（打消しが強調表示の隣にあるか）
+- 通信するコードがないか、端末に保存するものが想定どおりか
 
-最後に、全1,048,576通りを総当たりした分布（タイプ・最弱要素・判定の強度・スコア帯）を表示します。
-**編集前後でこの数字を見比べてください。** 大きく動いていたら、配点の変更が意図以上に効いています。
+### `test/hw-engine.test.js` と `test/hw-calibration.js` — 手書きのエンジン
 
-`content.js` は「ここだけ編集すれば全部変わる」設計です。
-そのぶん、一つの配点を変えただけで採点の較正が静かに壊れます。
-このスクリプトは、その静かな破壊を音にするためのものです。
+```
+node _ops/test/hw-engine.test.js       # 単体テスト（約2分）
+node _ops/test/hw-calibration.js       # 合成データでの較正と関門（N=3000、1分強）
+```
+
+`hw-calibration.js` の値は、人の指で書いた字から測ったものではありません。
+パイロット（`?collect=1` で、40人以上 × 2回・別の日）の実測が入ったら、`content.js` の `calibration` を置き換えます。
 
 ### `test/browser.js` — 画面として動くか
 
@@ -64,9 +80,10 @@ npx http-server -p 8899 -s .          # 別のターミナルで起動してお�
 NODE_PATH=/opt/node22/lib/node_modules node _ops/test/browser.js
 ```
 
-ヘッドレスChromiumで通しで操作します。4タイプの判定、属性による出し分け、共有リンク、
-リロード、戻る操作と履歴の深さ、途中復帰、不正なURL、共有シートが遅いときの挙動、
-静的ページ。いずれも過去に実際に出たバグの回帰を含みます。
+ヘッドレスChromiumで、CDP のタッチ入力を使って実際に「結」を書き、結果まで通します。
+書き直し・読めない字・属性による出し分け・2回目の平均・画像の保存・再読み込み・共有リンク・
+不正なURL・戻る操作と履歴・10問版（共有表示を含む）・静的ページ・外部への通信がないこと。
+iOS の戻るジェスチャーやアプリ内ブラウザの挙動は、実機でしか確かめられません。
 
 ### `build/make-redirect.js` — あとから引っ越すとき
 
@@ -77,9 +94,10 @@ node _ops/build/make-redirect.js https://新しいURL/
 GitHub Pages はサーバー側のリダイレクト（301）を張れません。何もしないで引っ越すと、
 すでにSNSへ流したリンクも、シェアされたタイプ別ページも、その瞬間から行き止まりになります。
 
-このスクリプトは `yui/` 配下の6ページを「新しい場所へ送り出す小さなページ」に置き換えます。
-canonical で検索エンジンに移転先を伝え、meta refresh と JavaScript で自動的に飛ばし、
-飛ばなかった人には押せるリンクを出します。完全な301ではありませんが、人は確実に着きます。
+このスクリプトは `yui/` 配下の7ページを「新しい場所へ送り出す小さなページ」に置き換えます。
+canonical で検索エンジンに移転先を伝え、meta refresh と JavaScript で自動的に飛ばし
+（JavaScript では結果のアドレス `#/r/…` と `?s=` を引き継ぎます）、飛ばなかった人には押せるリンクを出します。
+完全な301ではありませんが、人は確実に着きます。
 
 OGP画像は消しません。SNS側にキャッシュされた画像が割れるのを避けるためです。
 
@@ -98,8 +116,8 @@ _ops/
 ## 編集の手順
 
 1. `yui/content.js` を編集する
-2. `node _ops/test/check.js` — データとして壊れていないか
-3. `node _ops/build/build-pages.js` — ページを生成しなおす
-4. （画像を変えたなら）`config.ogpVersion` を上げて `render-ogp.js` を実行
+2. `node _ops/build/build-pages.js` — ページを生成しなおす
+3. （OGPの文言を変えたなら）`config.ogpVersion` を上げて `make-cards.js` → `render-ogp.js` → `build-pages.js`
+4. `node _ops/test/check.js` — NG が0件か
 5. `node _ops/test/browser.js` — 画面として動くか
 6. コミット
