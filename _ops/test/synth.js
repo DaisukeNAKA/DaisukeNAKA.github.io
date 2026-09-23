@@ -7,7 +7,9 @@
  *   SY.makeOther('ichi' | 'scribble' | 'tiny' | 'segments', { seed, side })   // 「結」でない入力
  *   SY.addTremor(strokes, px, hz)                                 // あとから一定のふるえを足す
  *   SY.stray(side, x, y, dx, dy, len, t0, dur)                    // 迷い線1本（字と関係のないインク）
- *   SY.split(strokes, idx, parts, gapMs)                          // idx 番目の画を、途中で指を離して parts 本に切る
+ *   SY.split(strokes, idx, parts, gapMs, mode)                    // idx 番目の画を、途中で指を離して parts 本に切る（'lift'／'dropout'）
+ *   SY.dropout(strokes, idx, frac, gapMs)                         // idx 番目の画の時刻の割合 frac で、接触が gapMs 途切れる
+ *   SY.pause(strokes, idx, frac, ms, events, hz)                  // 指を置いたまま ms 止まる（動き出す前・途中・離す前）
  *   SY.transform(strokes, side, (x, y) => [x2, y2])               // 正規化座標で変形（回転・鏡像など）
  *
  * yui/hw-engine.js の TEMPLATE（自作の12画）を、人ごとのクセと指の動きで崩して、
@@ -311,9 +313,26 @@ function stray(side, x, y, dx, dy, len, t0, dur) {
   pts.push({ x: pts[k].x, y: pts[k].y, t: t0 + dur });
   return { points: pts };
 }
-/* idx 番目の画を、途中で gapMs だけ指を離して parts 本に切る（点を等分し、あとの画は gapMs ずつ後ろへずらす）。
- * 切れ目の前の線は、その位置で離した（pointerup が最後の点と同じ位置・時刻）ことにします。 */
-function split(strokes, idx, parts, gapMs) {
+/* idx 番目の画を、途中で指が離れて parts 本に切る。mode で離れ方を選びます。
+ *  'lift'（既定）：点を等分した位置で指を止めて離し、gapMs 後に同じ位置から続ける（あとの画は gapMs ずつ後ろへずらす）。
+ *                 切れ目の前の線は、その位置で離した（pointerup が最後の点と同じ位置・時刻）ことにします。
+ *                 途中で考えて指を上げ、同じ所から書き足す人や、口を4画で書くような書き方のまね。
+ *  'dropout'     ：指は画面に付いたまま動き続け、接触だけが gapMs 途切れる（タッチの取りこぼし）。
+ *                 動いていた時間を parts 等分した時刻で切り、途切れていた間の点を抜きます（時刻はずらさない）。
+ *                 実機の取りこぼしに近い形です。 */
+function split(strokes, idx, parts, gapMs, mode) {
+  if (mode === 'dropout') {
+    const P = strokes[idx].points, up = P[P.length - 1], t0 = P[0].t, t1 = P[P.length - 2].t;
+    const cuts = [];
+    for (let q = 1; q < parts; q++) cuts.push(t0 + (t1 - t0) * q / parts);
+    let out = [{ points: P.slice() }];
+    cuts.slice().reverse().forEach((ta) => {
+      const last = out[0];
+      const pieces = dropoutPieces(last.points, ta, gapMs);
+      out = pieces ? pieces.concat(out.slice(1)) : out;
+    });
+    return strokes.slice(0, idx).concat(out, strokes.slice(idx + 1));
+  }
   const s = strokes[idx], n = s.points.length, out = [];
   let shift = 0;
   for (let q = 0; q < parts; q++) {
@@ -324,6 +343,55 @@ function split(strokes, idx, parts, gapMs) {
   }
   const rest = strokes.slice(idx + 1).map((x) => ({ points: x.points.map((p) => ({ x: p.x, y: p.y, t: p.t + shift })) }));
   return strokes.slice(0, idx).concat(out, rest);
+}
+/* 点の列 P（最後は pointerup）を、時刻 ta から gapMs だけ接触が途切れたものとして2本に分ける。
+ * 途切れていた間の点は抜き、2本目の書き出し（pointerdown）は、ta+gapMs の時刻の位置（点の間は線形に補う）に置きます。
+ * 止めている最中（最後の pointermove のあと）で切ってもかまいません。切れないとき（端に近すぎる）は null。 */
+function dropoutPieces(P, ta, gapMs) {
+  const up = P[P.length - 1], move = P.slice(0, P.length - 1), tb = ta + gapMs;
+  if (!(ta > P[0].t) || !(tb < up.t)) return null;
+  const at = (t) => {
+    if (t >= move[move.length - 1].t) return { x: move[move.length - 1].x, y: move[move.length - 1].y };
+    for (let i = 1; i < move.length; i++) {
+      if (move[i].t >= t) {
+        const a = move[i - 1], b = move[i], r = b.t > a.t ? (t - a.t) / (b.t - a.t) : 1;
+        return { x: a.x + (b.x - a.x) * r, y: a.y + (b.y - a.y) * r };
+      }
+    }
+    return { x: move[0].x, y: move[0].y };
+  };
+  const A = move.filter((p) => p.t <= ta), B = move.filter((p) => p.t > tb);
+  if (!A.length) return null;
+  const pa = at(ta), pb = at(tb);
+  const first = A.concat([{ x: pa.x, y: pa.y, t: ta }]);
+  const second = [{ x: pb.x, y: pb.y, t: tb }].concat(B, [up]);
+  return [{ points: first }, { points: second }];
+}
+/* idx 番目の画を、時刻の割合 frac（書き始め=0、pointerup=1。止めている最中も含む）の所で gapMs だけ接触が途切れた形にする */
+function dropout(strokes, idx, frac, gapMs) {
+  const P = strokes[idx].points, ta = P[0].t + (P[P.length - 1].t - P[0].t) * frac;
+  const pieces = dropoutPieces(P, ta, gapMs);
+  return pieces ? strokes.slice(0, idx).concat(pieces, strokes.slice(idx + 1)) : null;
+}
+/* 指を画面に置いたまま ms だけ止まる（考える・よそ見をする）。idx 番目の画の、動いていた時間の割合 frac の所で止まり、
+ * あとの点とあとの画は ms ずつ後ろへずらします。frac=0 は動き出す前、frac=1 は離す直前（最後の pointermove のあと）。
+ * events が true なら、止まっている間も位置のほぼ同じ pointermove が hz で届く端末のまね（0.2px の揺れ）。 */
+function pause(strokes, idx, frac, ms, events, hz) {
+  const r = mulberry32(0x51ed ^ Math.round(ms) ^ (idx << 8));
+  return strokes.map((s, i) => {
+    if (i < idx) return s;
+    if (i > idx) return { points: s.points.map((p) => ({ x: p.x, y: p.y, t: p.t + ms })) };
+    const P = s.points, up = P[P.length - 1], move = P.slice(0, P.length - 1);
+    const tp = move[0].t + (move[move.length - 1].t - move[0].t) * frac;
+    const before = move.filter((p) => p.t <= tp), after = move.filter((p) => p.t > tp);
+    const at = before.length ? before[before.length - 1] : move[0];
+    const out = before.length ? before.slice() : [{ x: at.x, y: at.y, t: at.t }];
+    if (events) for (let t = 1000 / (hz || 60); t < ms; t += 1000 / (hz || 60)) out.push({ x: at.x + gauss(r) * 0.2, y: at.y + gauss(r) * 0.2, t: out[0].t + (at.t - out[0].t) + t });
+    after.forEach((p) => out.push({ x: p.x, y: p.y, t: p.t + ms }));
+    out.push({ x: up.x, y: up.y, t: up.t + ms });
+    if (!before.length) out[0] = { x: at.x, y: at.y, t: at.t };
+    return { points: out };
+  });
 }
 /* 正規化座標（キャンバス一辺=1）での変形。f(x, y) → [x, y] */
 function transform(strokes, side, f) {
@@ -377,4 +445,4 @@ function makeOther(kind, params) {
   return drawGroups(groups, p, 0.6, p.seed >>> 0);
 }
 
-module.exports = { synth, make, makeOther, addTremor, stray, split, transform, mulberry32, gauss, DEFAULTS };
+module.exports = { synth, make, makeOther, addTremor, stray, split, dropout, pause, transform, mulberry32, gauss, DEFAULTS };

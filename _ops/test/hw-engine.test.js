@@ -36,6 +36,25 @@ const num = (f, k) => {
   return v;
 };
 const state = (f, k) => (f[k] ? f[k].state : null);
+/* 迷い線 sp と字のインク st の、線分どうしの正確な距離（キャンバス一辺=1）。迷い線を 1/20 ずつ刻んで、インクの各線分への距離を測る */
+function segDist(p, a, b) {
+  const vx = b[0] - a[0], vy = b[1] - a[1], L2 = vx * vx + vy * vy;
+  const r = L2 > 0 ? Math.max(0, Math.min(1, ((p[0] - a[0]) * vx + (p[1] - a[1]) * vy) / L2)) : 0;
+  return Math.hypot(p[0] - a[0] - vx * r, p[1] - a[1] - vy * r);
+}
+function inkDist(sp, st, side) {
+  const S = sp.points.map((p) => [p.x / side, p.y / side]);
+  let m = Infinity;
+  st.forEach((s) => {
+    const B = s.points.map((p) => [p.x / side, p.y / side]);
+    for (let i = 1; i < S.length; i++) for (let k = 0; k <= 20; k++) {
+      const p = [S[i - 1][0] + (S[i][0] - S[i - 1][0]) * k / 20, S[i - 1][1] + (S[i][1] - S[i - 1][1]) * k / 20];
+      if (B.length === 1) m = Math.min(m, Math.hypot(p[0] - B[0][0], p[1] - B[0][1]));
+      for (let j = 1; j < B.length; j++) m = Math.min(m, segDist(p, B[j - 1], B[j]));
+    }
+  });
+  return m;
+}
 const SEEDS = [1, 2, 3, 4, 5, 6];
 
 /* 形の特徴（大きさ・点の間隔・書き順に依らないはずのもの）と、許す差 */
@@ -244,14 +263,16 @@ head('■ 妥当性チェック（診断に進ませない入力）');
   check(!scr.ok && has(scr, ['tooFewStrokes']), '3画の落書きは 画数不足 で弾く', J(scr.problems));
   const fast = run({ seed: 2, speed: 10, pauseRatio: 0.15, stopMs: 10 });
   check(!fast.ok && has(fast, ['tooFast']), `1.2秒未満で書き終えたら 速すぎ で弾く（${fast.totalMs}ms）`, J(fast.problems));
-  const many = SY.synth({ seed: 2 });
-  const chopped = [];
-  many.forEach((s) => {
-    const h = Math.floor(s.points.length / 2);
-    if (h >= 2) { chopped.push({ points: s.points.slice(0, h) }); chopped.push({ points: s.points.slice(h) }); } else chopped.push(s);
-  });
+  // どの画も途中で指を上げて 0.15 秒あけてから続けた（接触の途切れ JOIN_MS=0.1 秒より長いので、1本につながない）
+  let chopped = SY.synth({ seed: 2 });
+  for (let k = chopped.length - 1; k >= 0; k--) chopped = SY.split(chopped, k, 2, 150);
   const mr = HW.analyze(chopped, { side: 320 });
   check(!mr.ok && has(mr, ['tooManyStrokes']), `画が ${chopped.length} 本（17本以上）なら 画数過多 で弾く`, J(mr.problems));
+  // 同じ切り方でも、切れ目が接触の途切れ（指は動いたまま 20〜40ms）なら1本につなぐので、画数は変わらない
+  let flick = SY.synth({ seed: 2 });
+  for (let k = flick.length - 1; k >= 0; k--) flick = SY.split(flick, k, 2, 20 + 10 * (k % 3), 'dropout');
+  const fl = HW.analyze(flick, { side: 320 });
+  check(fl.ok && fl.nStrokes === 12, `どの画も途中で接触が 20〜40ms 途切れても（${flick.length} 本の線）、1本につないで 12 画として数える（${fl.nStrokes} 画 ${J(fl.problems)}）`);
   const noKou = SY.synth({ seed: 3 }).filter((s, i) => i < 9);
   const nk = HW.analyze(noKou, { side: 320 });
   check(!nk.ok && has(nk, ['noKou']), '口（10〜12画）がなければ 口がない で弾く', J(nk.problems));
@@ -399,14 +420,18 @@ head('■ 迷いタップ・なぐり書き（どの画にも対応しないイ�
     Object.keys(POS).forEach((pk) => [0.02, 0.05, 0.1, 0.2].forEach((len) => ['前', '途中', 'あと'].forEach((when) => {
       const [x, y, dx, dy] = POS[pk];
       const t0 = when === '前' ? st[0].points[0].t - 500 - dur : (when === '途中' ? (g0 + g1 - dur) / 2 : lastT(st) + 400);
-      const b = HW.analyze(st.concat([SY.stray(w.side, x, y, dx, dy, len, t0, dur)]), { side: w.side });
+      const sp = SY.stray(w.side, x, y, dx, dy, len, t0, dur);
+      const b = HW.analyze(st.concat([sp]), { side: w.side });
       strayN++;
       const same = b.ok && J(b.feats) === J(a.feats) && b.totalMs === a.totalMs;
       const rejected = !b.ok && J(b.problems) === J(['extraInk']);
-      if (len <= 0.1 ? !same : !(same || rejected)) strayBad.push(`seed ${w.seed} ${pk} ${len * 100}% ${when}: ${b.ok ? '特徴が変わる' : J(b.problems)}`);
+      // 大きく書く人では「士の上」なども字のすぐそば（インクから 0.06 未満）になる。そこでは、取り合いの確かめで弾いてもよい
+      const far = inkDist(sp, st, w.side) >= 0.06;
+      if (len <= 0.1 && far ? !same : !(same || rejected)) strayBad.push(`seed ${w.seed} ${pk} ${len * 100}% ${when}: ${b.ok ? '特徴が変わる' : J(b.problems)}`);
     })));
   });
-  check(!strayBad.length, `字の外の 2〜20% の迷い線（${strayN} 通り：角・辺・字のすぐ上下 × 長さ × 書く前・途中・あと）で、測定値が黙って変わらない`, strayBad.slice(0, 4).join('\n         '));
+  check(!strayBad.length, `字の外の 2〜20% の迷い線（${strayN} 通り：角・辺・字のすぐ上下 × 長さ × 書く前・途中・あと）で、測定値が黙って変わらない` +
+    '（インクから 0.06 以上離れた 10% 以下は測定値も同じ、それ以外は同じか extraInk）', strayBad.slice(0, 4).join('\n         '));
 
   // 字のすぐ外（インクから 0.03〜）の 20% の迷い線が、本物の画をお手本の画から押しのけない（糸の左・士の上など）。
   // キャンバス全体の格子（10×10）× 4 方向 × 書く前・あと。どれも「測定値がまったく同じ」か「extraInk だけで弾く」
