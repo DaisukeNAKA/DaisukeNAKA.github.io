@@ -92,7 +92,11 @@
       <button class="btn btn-ghost" id="w-clear" type="button" disabled>全部消す</button>
     </div>
     <button class="btn" id="w-done" type="button" disabled>書けた</button>
-    <p class="note" id="w-inapp" hidden>線が何度も途切れるときは、SNSアプリの中ではなく、Safari や Chrome で開くと書きやすくなります。アプリのメニューから「ブラウザで開く」を選んでください。 外部ブラウザで開き直す（LINEで開いている方）</p>
+    <div id="w-inapp" hidden>
+      <p class="note">線が何度も途切れるときは、SNSアプリの中ではなく、Safari や Chrome で開くと書きやすくなります。アプリのメニューから「ブラウザで開く」を選んでください。</p>
+      <!-- LINE の中で開いているときだけ、外部ブラウザで開き直すリンクを出します（hw.js が href を入れます） -->
+      <p class="alt-path" id="w-line-ext-wrap" hidden><a id="w-line-ext" href="index.html">外部ブラウザで開き直す（LINEで開いている方）</a></p>
+    </div>
   </section>
 
   <!-- ========== 属性（書いたあとに1問。結果には影響しません） ========== -->

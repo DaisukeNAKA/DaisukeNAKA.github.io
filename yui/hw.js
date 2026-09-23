@@ -148,7 +148,7 @@
       active = null;
       S.cancels++;
       problem(WR.problems && WR.problems.cancelled);
-      if (S.cancels >= 2 && $("w-inapp")) { $("w-inapp").hidden = false; }
+      if (S.cancels >= 2) { showInappHint(); }
       redraw();
     });
     /* 古い WebKit や、アプリ側のスワイプ判定に指を取られないよう、既定の動作も止めます。 */
@@ -587,6 +587,21 @@
     });
     Y.on("save-img", function () { makeImage(t, view.strokes, measuresImage); });
     Y.on("collect-copy", function () { Y.copyText($("collect-json").textContent, CO.copied); });
+  }
+
+  /* 線が何度も途切れるときの案内。LINE のアプリ内ブラウザは openExternalBrowser=1 を付けると外部ブラウザで開き直せます。 */
+  function showInappHint() {
+    var box = $("w-inapp");
+    if (!box) { return; }
+    box.hidden = false;
+    var wrap = $("w-line-ext-wrap"), a = $("w-line-ext");
+    if (!wrap || !a || !Y.caps || Y.caps.inapp !== "line") { return; }
+    var q = (location.search || "").replace(/^\?/, "").split("&").filter(function (kv) {
+      return kv && kv.indexOf("openExternalBrowser=") !== 0;
+    });
+    q.push("openExternalBrowser=1");
+    a.setAttribute("href", location.pathname + "?" + q.join("&"));
+    wrap.hidden = false;
   }
 
   /* 較正モード（?collect=1 のときだけ）。特徴量の値だけを出します。線の座標や時刻は入れません。 */

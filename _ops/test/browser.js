@@ -249,6 +249,34 @@ async function writeAndFinish(page, opts = {}) {
   await page.waitForSelector('#result:not([hidden])');
   check('活動していない層に無料相談CTAを出さない', (await page.locator('#dm-copy').count()) === 0);
   check('コメントCTAは出す', (await page.locator('#cp-type').count()) === 1);
+  const softHrefs = await page.$$eval('#soft-go a', (as) => as.map((a) => a.getAttribute('href')));
+  check('ほかの型の案内は、ほかの3つのタイプ別ページへ', softHrefs.length === 3 && softHrefs.every((h) => /^t\/[a-z]+\.html$/.test(h)), softHrefs.join(','));
+
+  /* ---------------- 線が途切れるとき（LINE のアプリ内ブラウザ） ---------------- */
+  head('■ 線が途切れるとき');
+  const lctx = await browser.newContext({
+    viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true,
+    userAgent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148 Safari Line/14.10.0',
+  });
+  const lp = await lctx.newPage();
+  watch(lp);
+  await lp.goto(BASE + '?s=zz', { waitUntil: 'networkidle' });
+  await lp.click('#start');
+  await lp.waitForSelector('#write:not([hidden])');
+  const lcdp = await lctx.newCDPSession(lp);
+  const lbox = await lp.locator('#cv').boundingBox();
+  for (let k = 0; k < 2; k++) {
+    const p0 = { x: lbox.x + lbox.width * 0.3, y: lbox.y + lbox.height * 0.3 };
+    await lcdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [p0] });
+    await lcdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: p0.x + 30, y: p0.y + 30 }] });
+    await lcdp.send('Input.dispatchTouchEvent', { type: 'touchCancel', touchPoints: [] });
+    await lp.waitForTimeout(80);
+  }
+  check('途切れた画は捨てて、案内を出す', await lp.isVisible('#w-problem'));
+  check('2回途切れると、外部ブラウザの案内が出る', await lp.isVisible('#w-inapp'));
+  const ext = await lp.getAttribute('#w-line-ext', 'href');
+  check('LINE では外部ブラウザで開き直すリンクになる', await lp.isVisible('#w-line-ext') && /openExternalBrowser=1/.test(ext || '') && /s=zz/.test(ext || ''), ext);
+  await lctx.close();
 
   /* ---------------- 履歴 ---------------- */
   head('■ 戻る操作と履歴');

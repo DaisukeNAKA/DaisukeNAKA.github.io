@@ -363,12 +363,18 @@
           '<button class="btn btn-ghost" id="dm-copy" type="button">' + esc(CT.dmCopyButton || "送る一行をコピー") + "</button>" +
           (CT.dmNote ? '<p class="note cta-note">' + esc(CT.dmNote) + "</p>" : "") +
         "</div>";
-    } else if (!showBiz && CFG.profileUrl) {
+    } else if (!showBiz) {
+      /* softBody は「4つの型の解説と書き換え例をそのまま読める」と約束しているので、行き先はタイプ別ページです。 */
+      var others = (C.types || []).filter(function (o) { return o.key !== t.key; });
       html.biz =
         '<div class="cta">' +
           "<h2>" + esc(CT.softHeading) + "</h2>" +
           "<p>" + esc(CT.softBody) + "</p>" +
-          '<a class="btn btn-ghost" id="soft-go" href="' + esc(CFG.profileUrl) + '" target="_blank" rel="noopener">' + esc(CT.softButton) + "</a>" +
+          '<nav class="soft-links" id="soft-go" aria-label="' + esc(CT.softButton) + '">' +
+            others.map(function (o) {
+              return '<a class="btn btn-ghost" href="t/' + safeKey(o.key) + '.html">' + esc(o.name) + "</a>";
+            }).join("") +
+          "</nav>" +
         "</div>";
     }
 

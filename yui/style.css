@@ -326,3 +326,7 @@ html{overscroll-behavior-y:contain;}
 .foot-title{font-weight:700;}
 .foot-privacy{margin:10px 0;}
 .foot-privacy summary{cursor:pointer;}
+
+/* 属性で相談の案内を出さないときの、ほかの3つの型へのリンク */
+.soft-links { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 4px; }
+.soft-links .btn { flex: 1 1 28%; min-width: 0; margin: 0; padding-left: 8px; padding-right: 8px; }

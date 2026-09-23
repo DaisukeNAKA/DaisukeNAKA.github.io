@@ -168,7 +168,11 @@ const indexHtml =
       <button class="btn btn-ghost" id="w-clear" type="button" disabled>${esc(W.clear)}</button>
     </div>
     <button class="btn" id="w-done" type="button" disabled>${esc(W.done)}</button>
-    <p class="note" id="w-inapp" hidden>${esc(W.inappHint)} ${esc(W.lineExternal)}</p>
+    <div id="w-inapp" hidden>
+      <p class="note">${esc(W.inappHint)}</p>
+      <!-- LINE の中で開いているときだけ、外部ブラウザで開き直すリンクを出します（hw.js が href を入れます） -->
+      <p class="alt-path" id="w-line-ext-wrap" hidden><a id="w-line-ext" href="index.html">${esc(W.lineExternal)}</a></p>
+    </div>
   </section>
 
   <!-- ========== 属性（書いたあとに1問。結果には影響しません） ========== -->
