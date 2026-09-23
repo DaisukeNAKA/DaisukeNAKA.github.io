@@ -73,6 +73,18 @@ node _ops/test/hw-calibration.js       # 合成データでの較正と関門（
 `hw-calibration.js` の値は、人の指で書いた字から測ったものではありません。
 パイロット（`?collect=1` で、40人以上 × 2回・別の日）の実測が入ったら、`content.js` の `calibration` を置き換えます。
 
+### `test/hw-pilot-calibrate.js` — パイロットの実測から較正を作る
+
+```
+node _ops/test/hw-pilot-calibrate.js _ops/pilot/            # 関門の確認だけ
+node _ops/test/hw-pilot-calibrate.js _ops/pilot/ --apply    # 関門を満たしたら content.js の calibration を置き換える
+```
+
+協力者がコピーした数字を `_ops/pilot/<協力者ID>-<1|2>.json`（属性は `<協力者ID>.meta.json`）に置きます。
+`_ops/pilot/` は `.gitignore` 済みです。関門 (a) 各タイプ15〜35%（交差検証）・(b) |ρ|<0.3・(c) 別の日の一致70%以上・
+(e) 属性間の差15ポイント以内（偶然でも出る差の目安つき）と、「いちばん特徴」の偏りを確かめます。
+置き換えたら `hw-engine.js` の `STOP_MS` を新しい f5 の中央値に合わせ、build-pages → check → browser を通します。
+
 ### `test/browser.js` — 画面として動くか
 
 ```
